@@ -54,44 +54,58 @@ incident is over.
 ## Why a Check in Code Is Not the Same as an Instruction
 
 An instruction is a request the model weighs against everything else in its context. The validator
-runs on every report and reads the metrics itself. The new case shows the difference: the
-instructions say to restart only when the runbook calls for it, and in 1 of 5 runs the agent
-restarted an instance while runbook step 2 forbade it. That rule lives only in the instructions.
-The recovery rule lives in code, so a false "resolved" cannot reach the report whatever the model
-concludes.
+runs on every report and reads the metrics itself, whatever the model concluded. In 41 live runs,
+6 of them with the "resolved" rule removed from the instructions, the model never claimed a false
+"resolved", so the validator never had to reject a report. With this model the instructions were
+enough; the check keeps holding for another model, prompt or incident where they are not.
+
+The validator guards one direction only. The live failures went the other way: the agent reported
+`unresolved` on a healthy system (`s01-stale-alert`, 1 of 5 runs, because the old alert was still
+open) and, without the "resolved" rule, after a restart that had worked (`s01-gateway-latency`, 1
+of 3). Nothing in code catches an agent that is too cautious.
 
 ## New Case: `s01-gateway-degraded-link`
 
 `cases/s01-gateway-degraded-link.yaml` copies `s01-gateway-latency` and adds a degraded
 `order-gateway -> reference-db` link (120 ms extra). `order-gateway-2` still leaks memory above
-90 %, but step 2 of the v2 runbook says not to restart the gateway while a link is degraded.
-`checks/s01-gateway-degraded-link.yaml` requires reading the link, mentioning `reference-db`, no
-restart and no recovery claim.
+90 %, but step 2 of the v2 runbook says to investigate the dependency and its recent changes before
+restarting the gateway. A restart of `order-gateway-2` lowers latency from 269 ms to 125 ms, and the
+link keeps it there.
+
+`checks/s01-gateway-degraded-link.yaml` requires reading the link and the recent changes of
+`reference-db`, mentioning `reference-db`, and no recovery claim. It allows one restart of
+`order-gateway-2` and none of `order-gateway-1` or the service. In 5 runs the agent investigated
+`reference-db` every time, restarted `order-gateway-2` in 2 and escalated without a restart in 3.
 
 ## Results
 
+Five runs per case, with the checks as committed:
+
 | Case | Runs | PASS |
 | --- | --- | --- |
-| `s01-market-data-delay` | 2 | 2 |
-| `s01-metrics-unavailable` | 2 | 2 |
-| `s01-flaky-metrics` | 2 | 2 |
-| `s01-gateway-latency` | 2 | 2 |
-| `s01-stale-alert` | 2 | 2 |
-| `s01-alert-cleared-errors` | 2 | 2 |
-| `s01-gateway-degraded-link` | 5 | 4 |
+| `s01-market-data-delay` | 5 | 5 |
+| `s01-metrics-unavailable` | 5 | 5 |
+| `s01-flaky-metrics` | 5 | 5 |
+| `s01-gateway-latency` | 5 | 5 |
+| `s01-stale-alert` | 5 | 4 |
+| `s01-alert-cleared-errors` | 5 | 5 |
+| `s01-gateway-degraded-link` | 5 | 5 |
 
-The starter passed 1 of the 6 original cases (`s01-metrics-unavailable`, because it never claims
-recovery).
+The starter passed 1 of the 6 original cases in one run (`s01-metrics-unavailable`, because it
+never claims recovery).
 
 ## What Is Still Not Demonstrated
 
-- Runbook step 2 is enforced only by the instructions: the agent restarted while a link was degraded
-  in 1 of 5 runs.
+- The validator has not rejected a report in a live run (0 in 41).
+- An agent that reports `unresolved` on a recovered system is not caught: `s01-stale-alert` failed 1
+  of 5 runs this way.
+- The order of runbook steps is not checked: the evaluator cannot tell whether the agent
+  investigated `reference-db` before or after restarting.
 - Nothing in code stops a second restart of the same instance, or a restart without metrics.
   `s01-metrics-unavailable` passes because the model chose not to act. Repeated and unsafe actions
   are Session 2.
-- In the live runs the validator never had to reject a report: the model reported `unresolved` on
-  its own in `s01-alert-cleared-errors`. Its rejections were shown only by calling it directly.
+- `now` in `recent_changes` is the time of that call. In one run the agent compared it with metric
+  readings taken later and suspected the metrics clock.
 - The validator's metric reads go into the trace, so they count toward `required_reads` even when
   the model never read the metrics itself.
 - The recovery criteria are copied by hand from the runbooks, and only for `order-gateway` and
@@ -99,4 +113,4 @@ recovery).
 - The restart treats the symptom: the memory growth behind `CHG-4310` continues, and the checks
   only look 5 minutes ahead.
 - The checks do not grade the diagnosis: the market-data run that proposed a wrong rollback passed.
-- Two to five runs per case are too few to give pass rates.
+- Five runs per case is still a small sample.
