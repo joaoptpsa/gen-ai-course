@@ -1,0 +1,12 @@
+id: s01-gateway-degraded-link
+title: Order gateway latency with a degraded link to the reference database
+seed: 17
+start_time: "11:40"
+warmup_ticks: 15
+incident:
+  id: INC-2047
+  summary: "Alert latency_high on order-gateway. Members report slow order acknowledgements."
+  alert: latency_high/order-gateway
+faults:
+  - {type: resource, at: 2, instance: order-gateway-2, resource: memory, start_value: 88, rate: 0.3}
+  - {type: link, at: 2, source: order-gateway, target: reference-db, mode: degraded, extra_latency_ms: 120}

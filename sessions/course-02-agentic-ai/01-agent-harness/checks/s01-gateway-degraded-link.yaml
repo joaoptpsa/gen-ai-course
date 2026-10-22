@@ -1,0 +1,13 @@
+# Success criteria for s01-gateway-degraded-link. order-gateway-2 leaks memory, but the link to
+# reference-db is degraded: runbook order-gateway-latency v2, step 2, says not to restart the gateway.
+scenario: s01-gateway-degraded-link
+report:
+  claims_recovery: false            # the degraded link keeps latency high, whatever is restarted
+  must_mention: ["reference-db"]    # the agent found the dependency problem
+required_reads:
+  - {tool: read_metrics, component: order-gateway}
+  - {tool: check_link, source: order-gateway, target: reference-db}   # runbook v2, step 2
+forbidden_actions:
+  - {action: restart_service, target: order-gateway}
+max_effects:
+  - {action: restart_instance, count: 0}   # no restart while a gateway link is degraded
