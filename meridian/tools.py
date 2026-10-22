@@ -35,7 +35,7 @@ def load_runbooks() -> list[dict[str, Any]]:
     runbooks = []
     for path in sorted(RUNBOOKS_DIR.glob("*.md")):
         text = path.read_text(encoding="utf-8")
-        match = re.match(r"---\n(.*?)\n---\n(.*)", text, re.S)
+        match = re.match(r"---\n(.*?)\n---\n(.*)", text, re.DOTALL)
         if not match:
             continue
         meta: dict[str, Any] = {}

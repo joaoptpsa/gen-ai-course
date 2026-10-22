@@ -20,23 +20,36 @@ import json
 import os
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any
 
+import yaml
 from dotenv import load_dotenv
 from pydantic_ai import capture_run_messages
 from pydantic_ai.exceptions import AgentRunError, UsageLimitExceeded
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, RetryPromptPart, ToolCallPart, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    RetryPromptPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.usage import UsageLimits
 
-from meridian.evaluate import EvaluationResult, evaluate, print_evaluation, report_as_dict
-import yaml
-
+from meridian.evaluate import (
+    EvaluationResult,
+    evaluate,
+    print_evaluation,
+    report_as_dict,
+)
 from meridian.memory import MemoryStore
 from meridian.model import DATA_DIR
-from meridian.scenarios import load_solution, load_scenario
+from meridian.scenarios import load_scenario, load_solution
 from meridian.simulator import Simulator
 from meridian.tools import MeridianTools, ToolCall
 

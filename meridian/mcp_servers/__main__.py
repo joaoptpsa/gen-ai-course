@@ -16,9 +16,8 @@ import json
 
 from fastmcp import Client
 
-from meridian.mcp_servers import build_servers
+from meridian.mcp_servers import build_servers, deployments, monitoring, tickets
 from meridian.mcp_servers._base import settings_for
-from meridian.mcp_servers import deployments, monitoring, tickets
 from meridian.simulator import Simulator
 from meridian.tools import MeridianTools
 

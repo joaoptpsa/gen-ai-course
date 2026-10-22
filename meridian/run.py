@@ -19,7 +19,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from meridian.agent_runtime import IncidentRun, load_harness, print_run, require_api_key, run_incident
+from meridian.agent_runtime import (
+    IncidentRun,
+    load_harness,
+    print_run,
+    require_api_key,
+    run_incident,
+)
 from meridian.evaluate import claims_recovery, report_as_dict
 
 
