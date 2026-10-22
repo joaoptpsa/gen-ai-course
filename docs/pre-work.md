@@ -12,10 +12,10 @@ that class time is spent building, not installing tools or recovering accounts.
   Python and project dependencies for this course.
 - An editor with an integrated terminal, such as VS Code or Cursor.
 - A GitHub account
-- An OpenAI Platform account with billing enabled and a personal API key
+- An Anthropic Console account with billing enabled and a personal API key
 
-An API key is a private credential that lets a program call the OpenAI API. It
-is not the same as a ChatGPT subscription. API usage may incur small charges,
+An API key is a private credential that lets a program call the Anthropic API.
+It is not the same as a Claude subscription. API usage may incur small charges,
 depending on the model and volume used in class.
 
 ## Setup checklist
@@ -24,8 +24,8 @@ depending on the model and volume used in class.
 2. Install uv.
 3. Install your preferred editor.
 4. Create or sign in to GitHub.
-5. Create or sign in to the OpenAI Platform, enable billing, and create an API
-   key for personal use.
+5. Create or sign in to the Anthropic Console, enable billing, and create an
+   API key for personal use.
 6. Clone the course repository once its URL is shared.
 7. Open the cloned folder in your editor and terminal.
 8. Run `uv sync` in the repository root. This creates the local environment and
@@ -36,8 +36,8 @@ depending on the model and volume used in class.
 - Save the key only in a local `.env` file when instructed in class.
 - Never paste it into a notebook, slide, chat, or GitHub repository.
 - Never commit `.env`; the repository already ignores it.
-- If a key is exposed, revoke it in the OpenAI Platform immediately and create
-  a new one.
+- If a key is exposed, revoke it in the Anthropic Console immediately and
+  create a new one.
 
 ## Diagnostic check
 

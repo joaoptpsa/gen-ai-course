@@ -7,7 +7,7 @@ change systems or send data out. This session puts controls around them
 without stopping the work the agent is there to do.
 
 Run every command from the repository root after `uv sync` and after setting
-`OPENAI_API_KEY` in a local `.env` file.
+`ANTHROPIC_API_KEY` in a local `.env` file.
 
 ## What you have
 

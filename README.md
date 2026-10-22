@@ -47,8 +47,8 @@ one automatically with its default configuration.
 uv sync
 ```
 
-Create a local `.env` from `.env.example`, then add your personal API key. Do
-not commit that file.
+Create a local `.env` from `.env.example`, then add your personal Anthropic API
+key (`ANTHROPIC_API_KEY`). Do not commit that file.
 
 Run an exercise from the repository root with `uv run`, for example:
 

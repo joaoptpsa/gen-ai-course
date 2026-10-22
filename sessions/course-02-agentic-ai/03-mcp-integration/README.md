@@ -13,7 +13,7 @@ their catalog, their descriptions or the scopes of the credentials you are
 given.
 
 Run every command from the repository root after `uv sync` and after setting
-`OPENAI_API_KEY` in a local `.env` file.
+`ANTHROPIC_API_KEY` in a local `.env` file.
 
 ## What you have
 

@@ -7,7 +7,7 @@ supports it. This session adds two difficulties of real operations:
 - some tools change the system, and a repeated call can repeat the effect.
 
 Run every command from the repository root after `uv sync` and after setting
-`OPENAI_API_KEY` in a local `.env` file.
+`ANTHROPIC_API_KEY` in a local `.env` file.
 
 ## What you have
 

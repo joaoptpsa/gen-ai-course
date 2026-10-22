@@ -10,7 +10,7 @@ tickets are the operational source of truth; memory is a hint about where to
 look.
 
 Run every command from the repository root after `uv sync` and after setting
-`OPENAI_API_KEY` in a local `.env` file.
+`ANTHROPIC_API_KEY` in a local `.env` file.
 
 ## What you have
 

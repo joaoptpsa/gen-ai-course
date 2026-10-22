@@ -98,13 +98,13 @@ class IncidentRun:
 
 def default_model() -> str:
     load_dotenv()
-    return f"openai:{os.getenv('OPENAI_MODEL', 'gpt-4.1-mini')}"
+    return f"anthropic:{os.getenv('ANTHROPIC_MODEL', 'claude-haiku-5-5')}"
 
 
 def require_api_key() -> None:
     load_dotenv()
-    if not os.getenv("OPENAI_API_KEY"):
-        raise SystemExit("OPENAI_API_KEY is missing. Create a local .env from .env.example.")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise SystemExit("ANTHROPIC_API_KEY is missing. Create a local .env from .env.example.")
 
 
 def load_harness(path: str | Path) -> ModuleType:

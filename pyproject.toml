@@ -7,7 +7,9 @@ requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
-    "pydantic-ai-slim[mcp,openai]>=1.0.0",
+    "pydantic-ai-slim[anthropic,mcp]>=1.0.0",
+    # PydanticAI's Anthropic model fails on anthropic 2.x: https://github.com/pydantic/pydantic-ai/issues/10923
+    "anthropic>=1.12.1,<2",
     "pyyaml>=6.0",
     "fastmcp-slim[server]>=4.1",
 ]

@@ -12,7 +12,7 @@ model and build the harness:
 - **Exercise 2:** let the agent fix the problem, and check in code that the fix worked before it can say "resolved".
 
 Run every command from the repository root, after `uv sync` and after setting
-`OPENAI_API_KEY` in a local `.env` file. Commands are written on one line so
+`ANTHROPIC_API_KEY` in a local `.env` file. Commands are written on one line so
 that they work in any terminal (PowerShell included).
 
 ## What you have
