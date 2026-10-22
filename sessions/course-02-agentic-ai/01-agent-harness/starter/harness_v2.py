@@ -56,14 +56,22 @@ class IncidentReport(BaseModel):
 
 
 def read_alert(ctx: RunContext[IncidentDeps], alert_id: str) -> dict[str, Any]:
-    """Read an alert: rule, component, instance, state (open or resolved) and when it was opened."""
+    """Read an alert: rule, component, instance, state (open or resolved) and when it was opened.
+
+    Args:
+        alert_id: The alert's id, such as ALR-1001.
+    """
     return ctx.deps.tools.read_alert(alert_id)
 
 
 def list_alerts(
     ctx: RunContext[IncidentDeps], component: str | None = None
 ) -> dict[str, Any]:
-    """List the open alerts, optionally for one component. Instance alerts such as memory_pressure name the instance."""
+    """List the open alerts. Instance alerts such as memory_pressure name the instance.
+
+    Args:
+        component: Only list the alerts of this component, such as order-gateway. Omit it to list them all.
+    """
     return ctx.deps.tools.list_alerts(component=component)
 
 
@@ -80,10 +88,13 @@ def read_metrics_with_retry(
 def read_metrics(
     ctx: RunContext[IncidentDeps], component: str, window_ticks: int = 5
 ) -> dict[str, Any]:
-    """Read a component's metrics for the last `window_ticks` minutes (1 to 30), with the values of each instance.
+    """Read a component's recent metrics, with the values of each instance.
 
-    Components: order-gateway, matching-engine, market-data, settlement, reference-db.
     A result with "error" means the metrics backend did not answer: there are no values to use.
+
+    Args:
+        component: One of order-gateway, matching-engine, market-data, settlement, reference-db.
+        window_ticks: How many of the last minutes to read, 1 to 30.
     """
     return read_metrics_with_retry(ctx.deps.tools, component, window_ticks)
 
@@ -94,7 +105,13 @@ def read_logs(
     level: str | None = None,
     contains: str | None = None,
 ) -> dict[str, Any]:
-    """Read the 30 most recent log lines of a component, optionally of one level (INFO, WARN, ERROR) or containing a text."""
+    """Read the 30 most recent log lines of a component.
+
+    Args:
+        component: The component whose logs to read, such as order-gateway.
+        level: Only read lines of this level: INFO, WARN or ERROR.
+        contains: Only read lines whose message contains this text, ignoring case.
+    """
     return ctx.deps.tools.read_logs(
         component=component, level=level, contains=contains, limit=30
     )
@@ -107,6 +124,10 @@ def check_link(
 
     Dependencies: order-gateway -> reference-db, matching-engine; matching-engine -> market-data;
     settlement -> matching-engine, reference-db.
+
+    Args:
+        source: The component whose connection to check, such as order-gateway.
+        target: The dependency it connects to, such as reference-db.
     """
     return ctx.deps.tools.check_link(source, target)
 
@@ -115,6 +136,9 @@ def recent_changes(ctx: RunContext[IncidentDeps], component: str) -> dict[str, A
     """List a component's latest deploys and configuration changes, newest first.
 
     `as_of` is the date and time of this answer; `minutes_ago` is how long before it each change happened.
+
+    Args:
+        component: The component whose changes to list, such as order-gateway.
     """
     sim = ctx.deps.sim
     as_of_tick = sim.state.tick
@@ -135,14 +159,21 @@ def list_runbooks(ctx: RunContext[IncidentDeps]) -> dict[str, Any]:
 
 
 def read_runbook(ctx: RunContext[IncidentDeps], name: str) -> dict[str, Any]:
-    """Read the latest version of a runbook, by the name given in list_runbooks."""
+    """Read the latest version of a runbook.
+
+    Args:
+        name: The runbook's name, as list_runbooks gives it.
+    """
     return ctx.deps.tools.read_runbook(name)
 
 
 def restart_instance(ctx: RunContext[IncidentDeps], instance_id: str) -> dict[str, Any]:
-    """Restart one instance, such as order-gateway-2. It is back after about 2 minutes.
+    """Restart one instance. It is back after about 2 minutes.
 
     Instances of critical components (matching-engine, reference-db) are rejected.
+
+    Args:
+        instance_id: The instance to restart, such as order-gateway-2.
     """
     return ctx.deps.tools.restart_instance(instance_id)
 
