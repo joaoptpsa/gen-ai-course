@@ -1,7 +1,7 @@
 # Course 2 — Pre-reads
 
 Optional reading and reference material, grouped by topic. You do not need to
-read everything before class.
+read everything before class. See also the [Course 1 pre-reads](course-01-pre-reads.md).
 
 ## Agent architectures
 

@@ -20,6 +20,7 @@ gen-ai-course/
 ### Docs
 
 - [`docs/pre-work.md`](docs/pre-work.md) — initial environment setup.
+- [`docs/course-01-pre-reads.md`](docs/course-01-pre-reads.md) — Course 1 reading and references, grouped by topic.
 - [`docs/course-02-pre-reads.md`](docs/course-02-pre-reads.md) — Course 2 reading and references, grouped by topic.
 
 ### Course 2 — Agentic AI
