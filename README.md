@@ -63,6 +63,10 @@ without an API key:
 uv run python -m pytest meridian/tests
 ```
 
+Format the tracked Python files with `bin/format` (ruff) and lint them with
+`bin/lint` (ruff and basedpyright). `uv sync` installs both tools as
+development dependencies.
+
 ## Principles
 
 - Keep API keys local; never commit `.env` files.
