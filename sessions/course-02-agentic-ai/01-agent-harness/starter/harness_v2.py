@@ -112,18 +112,21 @@ def check_link(
 
 
 def recent_changes(ctx: RunContext[IncidentDeps], component: str) -> dict[str, Any]:
-    """List a component's latest deploys and configuration changes, newest first, with the current date and time and how many minutes ago each change happened."""
+    """List a component's latest deploys and configuration changes, newest first.
+
+    `as_of` is the date and time of this answer; `minutes_ago` is how long before it each change happened.
+    """
     sim = ctx.deps.sim
-    now = sim.state.tick
+    as_of_tick = sim.state.tick
     result = ctx.deps.tools.recent_changes(component=component)
     if "changes" not in result:
         return result
     # Alerts and metrics show only the time of day, so the date and age tell a deploy from days ago apart from one minutes ago.
     changes = [
-        {**change, "minutes_ago": now - change["at_tick"]}
+        {**change, "minutes_ago": as_of_tick - change["at_tick"]}
         for change in result["changes"]
     ]
-    return {**result, "now": sim.clock.timestamp(now), "changes": changes}
+    return {**result, "as_of": sim.clock.timestamp(as_of_tick), "changes": changes}
 
 
 def list_runbooks(ctx: RunContext[IncidentDeps]) -> dict[str, Any]:
