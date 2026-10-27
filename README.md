@@ -64,7 +64,7 @@ uv run python -m pytest meridian/tests
 ```
 
 Format the tracked Python files with `bin/format` (ruff) and lint them with
-`bin/lint` (ruff and basedpyright). `uv sync` installs both tools as
+`bin/lint` (ruff and basedpyright; `bin/lint --fix` applies ruff's safe fixes). `uv sync` installs both tools as
 development dependencies. basedpyright skips the existing type errors listed in
 `.basedpyright/baseline.json` and drops entries as they get fixed.
 

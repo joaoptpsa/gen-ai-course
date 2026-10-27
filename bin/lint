@@ -6,11 +6,34 @@ SCRIPT_DIR=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
 source "$SCRIPT_DIR/lib/_python-files.sh"
 cd -- "$SCRIPT_DIR/.."
 
+usage() {
+  echo 'usage: bin/lint [--fix]' >&2
+  echo '  --fix  apply the fixes ruff can make safely before reporting' >&2
+}
+
+ruff_arguments=()
+case "${1:-}" in
+  '') ;;
+  --fix) ruff_arguments+=(--fix) ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac
+[[ $# -le 1 ]] || {
+  usage
+  exit 2
+}
+
 files=()
 python_files_read files
 
 # Every linter runs so one report lists all findings.
 status=0
-uv run ruff check -- "${files[@]}" || status=1
+uv run ruff check "${ruff_arguments[@]}" -- "${files[@]}" || status=1
 uv run basedpyright "${files[@]}" || status=1
 exit "$status"
