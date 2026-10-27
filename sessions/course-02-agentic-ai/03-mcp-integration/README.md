@@ -28,7 +28,7 @@ You work directly in the files of `starter/`. Each file starts with its exercise
 
 ## The commands
 
-Run them from the repository root, after `uv sync` and with `OPENAI_API_KEY` in `.env`.
+Run them from the repository root, after `uv sync` and with `ANTHROPIC_API_KEY` in `.env`.
 
 ```bash
 uv run python -m meridian.mcp_servers inspect

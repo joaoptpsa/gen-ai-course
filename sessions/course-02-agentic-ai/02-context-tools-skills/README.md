@@ -31,7 +31,7 @@ Every case has a budget: 40 000 input tokens per run, all requests together.
 
 ## The commands
 
-Run them from the repository root, after `uv sync` and with `OPENAI_API_KEY` in `.env`.
+Run them from the repository root, after `uv sync` and with `ANTHROPIC_API_KEY` in `.env`.
 
 ```bash
 uv run python -m meridian.run --harness sessions/course-02-agentic-ai/02-context-tools-skills/starter/harness.py --scenario sessions/course-02-agentic-ai/02-context-tools-skills/cases/s02-noisy-gateway.yaml
