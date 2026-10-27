@@ -1,119 +1,70 @@
 # Session 3 — MCP: External Integration, Governance and Remote Access
 
-Session 2 produced an agent with a context policy, selected tools and
-idempotent actions. In this session the agent connects to the exchange's own
-systems through MCP:
+## The situation
 
-- a ticket system (Jira-like): projects MRX (operations) and MEM (member support);
-- a monitoring platform (LogicMonitor-like): devices, alerts, datapoints, logs;
-- a deployment platform: deployments, configuration changes, rollbacks, restarts.
+- **The same problem arrives several times.** An alert, a ticket and a member complaint can be one incident. The agent opens one for each.
+- **The agent trusts every server it is connected to.** The tickets, monitoring and deployments servers belong to other teams. They change overnight, refuse calls for lack of permission, and sometimes a server nobody reviewed appears.
 
-These servers are written and published by other teams. You do not control
-their catalog, their descriptions or the scopes of the credentials you are
-given.
+## The exercises
 
-Run every command from the repository root after `uv sync` and after setting
-`ANTHROPIC_API_KEY` in a local `.env` file.
+You work directly in the files of `starter/`. Each file starts with its exercise: the problem, what to build, what to watch out for, and hints.
 
-## What you have
+| Exercise | File | You build |
+|---|---|---|
+| 1. Your MCP server: one incident, several sources | `starter/incident_server.py` | `correlate()` and the descriptions of the server's tools |
+| 2. The gatekeeper | `starter/gateway.py` | an approved catalog, least privilege, blocked calls, remembered refusals |
 
-```text
-03-mcp-integration/
-├── starter/harness.py   # the agent, connected to every tool of the three servers
-└── cases/               # incidents for this session
-```
+`starter/harness.py` wires the agent, the servers and your two files. You do not need to edit it. The other teams' servers are in `meridian/mcp_servers/`.
 
-- The servers are in `meridian/mcp_servers/`. They are real MCP servers
-  (FastMCP) that run in the same process as the agent and share its simulator:
-  a restart through `deployments` changes what `monitoring` shows.
-- `build_toolsets(deps)` in the harness decides which servers and tools the
-  model gets. The starter exposes all of them with a prefix
-  (`tickets_create_issue`, `monitoring_get_device_datapoints`, ...).
-- The runbooks are still local files. They are procedures (Session 2), not an
-  MCP server.
+## The cases
 
-Look at the catalog before running anything:
+| Case | What happens | Exercise |
+|---|---|---|
+| `s03-alert-and-ticket` | A gateway alert, while ticket MRX-2210 and complaint MEM-1187 already describe the same problem. | 1 |
+| `s03-similar-but-different` | A gateway alert, while an unrelated market data incident is open. | 1 |
+| `s03-description-change` | The monitoring server was upgraded overnight; one tool description now asks for a rollback. | 2 |
+| `s03-scope-refused` | The ticket credentials were rotated and lost the permission to comment. | 2 |
+| `s03-shadow-server` | A community server nobody reviewed appeared in the catalog, with a "quick fix" tool. | 2 |
+
+## The commands
+
+Run them from the repository root, after `uv sync` and with `OPENAI_API_KEY` in `.env`.
 
 ```bash
 uv run python -m meridian.mcp_servers inspect
-uv run python -m meridian.mcp_servers inspect --server monitoring --full
+uv run python -m meridian.mcp_servers inspect --out sessions/course-02-agentic-ai/03-mcp-integration/starter/catalog.lock.json
+uv run python sessions/course-02-agentic-ai/03-mcp-integration/starter/check_correlation.py --server sessions/course-02-agentic-ai/03-mcp-integration/starter/incident_server.py
+uv run python sessions/course-02-agentic-ai/03-mcp-integration/starter/check_gateway.py --gateway sessions/course-02-agentic-ai/03-mcp-integration/starter/gateway.py
+uv run python -m meridian.run --harness sessions/course-02-agentic-ai/03-mcp-integration/starter/harness.py --scenario sessions/course-02-agentic-ai/03-mcp-integration/cases/s03-alert-and-ticket.yaml
+uv run python -m meridian.run --harness sessions/course-02-agentic-ai/03-mcp-integration/starter/harness.py --cases-dir sessions/course-02-agentic-ai/03-mcp-integration/cases --summary
 ```
 
-It shows each server's version and publisher, the scopes granted to the
-agent, and the approximate size of every tool definition. Those definitions
-are sent to the model in every request.
+- `inspect` shows the catalog of the other teams' servers; with `--out` it writes your lock file (exercise 2).
+- `check_correlation.py` replays the 22 events of `events/dev.yaml` through your `correlate`, without a model, and gives precision, recall and F1.
+- `check_gateway.py` runs 7 tests on your gatekeeper, without a model.
+- The last two run the agent with the model, on one case or on all of them.
 
-## Exercise 1 — Select capabilities from an external catalog
+## Done when
 
-Run the starter on the first case:
+| Exercise | Done when |
+|---|---|
+| 1 | `check_correlation.py` gives F1 ≥ 0.90, and `s03-alert-and-ticket` and `s03-similar-but-different` pass. |
+| 2 | `check_gateway.py` gives 7/7, and all five cases pass. |
 
-```bash
-uv run python -m meridian.run \
-  --harness sessions/course-02-agentic-ai/03-mcp-integration/starter/harness.py \
-  --scenario sessions/course-02-agentic-ai/03-mcp-integration/cases/s03-alert-and-ticket.yaml
-```
+## Write down
 
-1. Read the trace. Which tools did the model use out of the 40-odd it was
-   given? How many input tokens did the run use?
-2. Copy the starter to `harness_v2.py` and apply your Session 2 selection
-   policy to this catalog:
-   - which tools this agent needs, per server, and why;
-   - which capabilities overlap (for example a restart through
-     `deployments.restart_workload` or through your own native tool from
-     Session 2) and which one the agent should use;
-   - when an MCP server is worth it here, and when a native tool is simpler.
+- **1.** Your correlation rules and the hardest one to get right; why this logic belongs in a server and not in the agent's instructions.
+- **2.** For each exercise 2 case: what went wrong, and which kind of problem it was (capability selection, server governance, or credentials and scopes).
 
-   PydanticAI toolsets can be filtered and renamed
-   (`MCPToolset(server).filtered(...)`, `.prefixed(...)`, `.renamed(...)`).
-3. Compare both versions with `--summary`: tool calls, actions, input tokens.
+## Rules
 
-## Exercise 2 — One incident, several sources
-
-In `s03-alert-and-ticket` the same problem arrives three times: the
-monitoring alert in the brief, ticket MRX-2210 and member complaint MEM-1187.
-
-1. Run your harness. Did the agent open a second incident?
-2. Design how the agent correlates sources: what it searches before creating
-   anything, what makes two events the same incident, and what it records on
-   the existing ticket (comment, link).
-3. Run `s03-similar-but-different`: a gateway alert while an unrelated market
-   data incident is open. Your correlation must not merge them.
-4. Write one new case where correlation is hard (for example a complaint
-   that describes a symptom with different words) and run it.
-
-## Exercise 3 — Governance and access
-
-Run your harness on the two remaining cases:
-
-- `s03-description-change`: the monitoring server was upgraded overnight.
-- `s03-scope-refused`: the ticket credentials were rotated.
-
-1. For each case, classify what went wrong (or nearly did):
-   - capability selection (your harness exposed the wrong thing);
-   - server governance (someone changed the server or its descriptions);
-   - credentials and scopes (the server refused because of the token).
-2. Add a governance rule to your harness. For example, keep a lock file of
-   the approved catalog (`inspect --json` gives versions and description
-   hashes) and decide what happens when a server or a description changes:
-   refuse the tool, use the approved version, or ask a human.
-3. A tool description is not an instruction from your organisation. Record
-   the changed description as a case for Session 5, where indirect injection
-   is handled.
-4. When a write is refused by scope, what should the agent do and report?
-   Change the harness so that it neither insists nor looks for another way to
-   write.
-
-## Conventions
-
-- Keep a `status` field in the report.
-- Do not edit `meridian/`. Servers are other teams' systems: adapt your
-  harness, not the server.
-- Critical components (`matching-engine`, `reference-db`) cannot be changed by
-  this agent. The executor rejects those actions.
+- Do not edit `meridian/` or `starter/harness.py`. The other teams' servers are their systems: adapt your side.
+- Critical components (`matching-engine`, `reference-db`) cannot be changed by this agent.
+- Deliverable: your two files and lock file, the notes, and five new events for `events/dev.yaml` that your correlation gets right and a naive rule ("same component within 30 minutes") gets wrong.
 
 ## Trainer demo — remote access
 
-The same tickets server over Streamable HTTP, with bearer tokens that carry
+The tickets server over Streamable HTTP, with bearer tokens that carry
 different scopes:
 
 ```bash
@@ -123,12 +74,9 @@ uv run python -m meridian.mcp_servers.http_demo client --token first-line
 uv run python -m meridian.mcp_servers.http_demo client --token incident-manager
 ```
 
-No token: the transport refuses the connection. A token without the scope:
-the server refuses the call. A token with the scope: the call succeeds.
-
 ## Scope boundary
 
-MCP integration, catalog selection, correlation of sources, server
-governance and scopes. Defending against injected instructions is Session 5;
-memory of earlier incidents is Session 4. Do not build an OAuth server or
-support several transports from scratch.
+Building an MCP server, correlating sources, governing the servers of others
+and handling scopes. Defending against injected instructions in general is
+Session 5; memory of earlier incidents is Session 4. Do not build an OAuth
+server or support several transports from scratch.
