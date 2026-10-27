@@ -31,6 +31,8 @@ def _load(path: Path) -> Any:
     """Load a module from a file next to this one."""
     module_name = f"{path.stem}_{abs(hash(path)) % 100_000}"
     spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"Cannot load module from {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
