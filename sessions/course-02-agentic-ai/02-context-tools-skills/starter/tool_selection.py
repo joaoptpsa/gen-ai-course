@@ -47,15 +47,17 @@ Hints (read only if stuck)
 
 from __future__ import annotations
 
+import logging
+import re
 from typing import Any
 
 from pydantic import BaseModel
-from pydantic_ai import RunContext
+from pydantic_ai import Agent, RunContext
 
 from meridian.agent_runtime import IncidentDeps
 
 # 0. Set to True: the agent gets the platform's whole catalog.
-USE_FULL_CATALOG = False
+USE_FULL_CATALOG = True
 
 # The tools the agent sees in this run. The harness fills it with select_tools at the start of every run.
 ACTIVE: set[str] = set()
@@ -64,26 +66,116 @@ ACTIVE: set[str] = set()
 CATALOG: dict[str, str] = {}
 
 
+logger = logging.getLogger(__name__)
+
+# The tools every investigation starts with: the tools of exercise 1.
+CORE_TOOLS = ("read_metrics", "summarize_logs", "find_runbook", "recent_changes")
+
+# Waiting for recovery follows any of these, so code adds wait_for_recovery when one is selected.
+ACTION_TOOLS = frozenset({"restart_instance", "restart_service", "rollback_change", "flush_cache", "scale_out", "drain_instance"})
+
+# Legacy or dangerous tools: never offered, whatever the router says and whatever is searched for.
+NEVER_OFFERED = frozenset({"read_logs_v1", "get_metrics_legacy", "restart_all"})
+
+MAX_EXTRA_TOOLS = 7
+MAX_TOOLS = 10
+SEARCH_RESULTS = 3
+# Searching can add tools during the run, up to two searches beyond the selection.
+MAX_ACTIVE_TOOLS = MAX_TOOLS + 2 * SEARCH_RESULTS
+STOPWORDS = frozenset({"the", "and", "for", "from", "with", "that", "this", "are", "can", "all", "any", "one", "its"})
+
+ROUTER_INSTRUCTIONS = f"""You choose the tools an on-call engineer needs for an incident on the Meridian Exchange.
+The tools listed under "Already given" are always available: do not choose them, and do not choose
+a tool that does the same job as one of them (for example another way to read logs).
+From the list, choose only the tools this incident plausibly needs, at most {MAX_EXTRA_TOOLS} and the most
+important first. Fewer is better: every tool costs tokens in every request. Prefer a current tool to
+a legacy one. Consider:
+- what the incident names: an instance (its own metrics), a link, an alert, a ticket (search for it,
+  read it, comment on it), a member, a host, a certificate, DNS;
+- errors, rejected orders or refused connections: the link to the component's dependencies;
+- what can fix it: the specific fix tool for a suspected change, one instance or a whole service;
+- what checks an action already taken;
+- critical components (matching-engine, reference-db) cannot be changed by the agent: for them,
+  choose a way to ask for approval or to reach the on-call engineer instead of a fix;
+- an outage across components or one that stops members trading: overall status and a way to alert people;
+- trading hours or the trading calendar, market data, settlement or reference data.
+Return only names from the list.
+"""
+
+
 class Selection(BaseModel):
     tools: list[str]
+
+
+def router_prompt(incident: str, tools: dict[str, str]) -> str:
+    """The incident and one line per tool the router may choose."""
+    given = "\n".join(f"{name}: {tools[name]}" for name in CORE_TOOLS if name in tools)
+    offered = {name: summary for name, summary in tools.items() if name not in CORE_TOOLS and name not in NEVER_OFFERED}
+    listing = "\n".join(f"{name}: {summary}" for name, summary in offered.items())
+    return f"{incident}\n\nAlready given:\n{given}\n\nTools:\n{listing}"
+
+
+def waiting_for(names: list[str], tools: dict[str, str]) -> list[str]:
+    """wait_for_recovery when one of the names is an action, since waiting follows acting."""
+    needed = "wait_for_recovery" in tools and bool(ACTION_TOOLS & set(names))
+    return ["wait_for_recovery"] if needed else []
+
+
+def correct_selection(chosen: list[str], tools: dict[str, str]) -> list[str]:
+    """The core, waiting if an action is chosen, then the model's choices in order, capped.
+
+    Unknown and never-offered names are dropped.
+    """
+    core = [name for name in CORE_TOOLS if name in tools]
+    allowed = [name for name in chosen if name in tools and name not in NEVER_OFFERED]
+    unique = list(dict.fromkeys([*core, *waiting_for(allowed, tools), *allowed]))
+    return unique[:MAX_TOOLS]
 
 
 def select_tools(incident: str, tools: dict[str, str], model: Any) -> list[str]:
     """A. The names of the tools the agent needs for this incident.
 
     incident: the incident line the agent receives; tools: name -> one-line summary;
-    model: the model of the run. As supplied: every tool.
+    model: the model of the run. The model chooses from the summaries; code adds the core,
+    drops unknown and never-offered names and caps the total. If the model fails, the core is used.
     """
-    # Hint: Agent(model, output_type=Selection, instructions=...).run_sync(prompt).output.tools,
-    # with the incident and one "name: summary" line per tool in the prompt.
-    return list(tools)
+    router = Agent(model, output_type=Selection, instructions=ROUTER_INSTRUCTIONS)
+    try:
+        chosen = router.run_sync(router_prompt(incident, tools)).output.tools
+    except Exception:
+        logger.warning("the router failed, offering only the core tools", exc_info=True)
+        chosen = []
+    return correct_selection(chosen, tools)
+
+
+def words_of(text: str) -> set[str]:
+    """Lowercase words of a text, without short or common ones and with a trailing s removed."""
+    words = re.findall(r"[a-z]+", text.lower().replace("_", " "))
+    return {word.removesuffix("s") for word in words if len(word) > 2 and word not in STOPWORDS}
 
 
 def search_tools(ctx: RunContext[IncidentDeps], need: str) -> dict[str, Any]:
-    """B. Write the docstring the model will read: when to call it and what to describe."""
-    # Hint: score each tool of CATALOG by the words it shares with `need`; add the best to ACTIVE.
-    raise NotImplementedError
+    """Find tools for something your tools cannot do; the best matches become available next step.
+
+    Args:
+        need: What you need, in a few words, such as "TLS certificate expiry".
+    """
+    if len(ACTIVE) >= MAX_ACTIVE_TOOLS:
+        return {"added": {}, "message": "You already have as many tools as you can be given. Use them, or report what you cannot check."}
+    wanted = words_of(need)
+    scores = {
+        name: len(wanted & words_of(f"{name} {summary}"))
+        for name, summary in CATALOG.items()
+        if name not in ACTIVE and name not in NEVER_OFFERED
+    }
+    best = sorted((name for name, score in scores.items() if score > 0), key=lambda name: -scores[name])[:SEARCH_RESULTS]
+    added = list(dict.fromkeys([*best, *waiting_for(best, CATALOG)]))
+    ACTIVE.update(added)
+    found: dict[str, Any] = {"added": {name: CATALOG[name] for name in added}}
+    if not best:
+        found["message"] = "No other tool matches. Describe the need with different words, or report what you cannot check."
+    return found
 
 
-# Tools the agent always has, whatever select_tools says. Add search_tools.
-ALWAYS_ON: tuple = ()
+# Tools the agent always has, whatever select_tools says.
+ALWAYS_ON: tuple = (search_tools,)
