@@ -57,6 +57,9 @@ from typing import Any
 
 LOCK_FILE = Path(__file__).with_name("catalog.lock.json")
 
+# Tools of other teams' servers that crash on every call; the model reads datapoints instead.
+BROKEN_TOOLS = {("monitoring", "get_device")}
+
 
 def reset() -> None:
     """Called at the start of every run, so that one incident does not inherit the state of another."""
@@ -65,7 +68,7 @@ def reset() -> None:
 def approve_tool(server: str, name: str, description: str) -> bool:
     """True if the model may be offered this tool."""
     # Hint: rules 1 and 2 live here: in the lock, same hash, and in your list of needed tools.
-    return True
+    return (server, name) not in BROKEN_TOOLS
 
 
 def check_call(server: str, name: str, args: dict[str, Any]) -> str | None:
