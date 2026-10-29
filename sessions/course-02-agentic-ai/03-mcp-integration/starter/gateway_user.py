@@ -51,37 +51,94 @@ Test without a model: check_gateway.py (7 tests).
 
 from __future__ import annotations
 
+import hashlib
 import json
+from functools import cache
 from pathlib import Path
 from typing import Any
 
 LOCK_FILE = Path(__file__).with_name("catalog.lock.json")
 
-# Tools of other teams' servers that crash on every call; the model reads datapoints instead.
-BROKEN_TOOLS = {("monitoring", "get_device")}
+# Read to investigate, comment and link to record, restart one instance to act. Left out on
+# purpose: issue creation (the incidents server opens incidents), alert acknowledgement and
+# downtime, rollbacks, pipeline controls, and monitoring.get_device (it fails on every call).
+NEEDED_TOOLS = {
+    "tickets": {"search_issues", "get_issue", "add_comment", "link_issues"},
+    "monitoring": {
+        "list_alerts",
+        "get_alert",
+        "list_devices",
+        "get_device_datapoints",
+        "get_instance_datapoints",
+        "search_logs",
+    },
+    "deployments": {
+        "list_deployments",
+        "get_deployment",
+        "get_deployment_diff",
+        "list_services",
+        "get_service",
+        "restart_workload",
+    },
+}
+
+refused_tools: set[tuple[str, str]] = set()
 
 
 def reset() -> None:
     """Called at the start of every run, so that one incident does not inherit the state of another."""
+    refused_tools.clear()
+
+
+def description_hash(description: str) -> str:
+    return hashlib.sha256(description.encode()).hexdigest()[:12]
+
+
+@cache
+def locked_hashes() -> dict[tuple[str, str], str]:
+    """Description hash of every tool in the approved catalog, by (server, tool)."""
+    return {
+        (server["server"], tool["name"]): tool["description_sha256"]
+        for server in load_lock()
+        for tool in server["tools"]
+    }
 
 
 def approve_tool(server: str, name: str, description: str) -> bool:
     """True if the model may be offered this tool."""
-    # Hint: rules 1 and 2 live here: in the lock, same hash, and in your list of needed tools.
-    return (server, name) not in BROKEN_TOOLS
+    if name not in NEEDED_TOOLS.get(server, set()):
+        return False
+    return locked_hashes().get((server, name)) == description_hash(description)
 
 
 def check_call(server: str, name: str, args: dict[str, Any]) -> str | None:
     """None to let the call through, or the reason to block it (the model receives the reason)."""
-    # Hint: rules 3 and 4 live here. Look at the arguments of deployments.restart_workload.
+    if (server, name) in refused_tools:
+        reason = (
+            f"Blocked: {server}.{name} was refused for lack of scope earlier in this run and "
+            "will be refused again. Do not retry it or write the same thing with another tool; "
+            "mention the missing permission in your report."
+        )
+        return reason
+    if (server, name) == ("deployments", "restart_workload") and not args.get(
+        "instance"
+    ):
+        reason = (
+            "Blocked: without `instance` this restarts every instance of the service. "
+            "Give `instance`, for example order-gateway-2, to restart one."
+        )
+        return reason
     return None
 
 
 def after_call(server: str, name: str, args: dict[str, Any], result: Any) -> None:
     """Called with the answer of every call that went through."""
-    # Hint: remember refusals for lack of scope.
+    if isinstance(result, dict) and result.get("error") == "insufficient_scope":
+        refused_tools.add((server, name))
 
 
 def load_lock() -> list[dict[str, Any]]:
     """The approved catalog, as written by `inspect --out` (a list of servers with their tools)."""
-    return json.loads(LOCK_FILE.read_text(encoding="utf-8")) if LOCK_FILE.is_file() else []
+    return (
+        json.loads(LOCK_FILE.read_text(encoding="utf-8")) if LOCK_FILE.is_file() else []
+    )
