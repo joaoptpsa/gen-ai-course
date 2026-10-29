@@ -56,18 +56,100 @@ Hints (read only if stuck)
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastmcp import FastMCP
 
+from meridian.model import load_topology
 from meridian.tools import MeridianTools
 
+WINDOW_MINUTES = 30
 
-def correlate(event: dict[str, Any], open_incidents: list[dict[str, Any]]) -> str | None:
-    """Return the key of the open incident this event belongs to, or None to open a new incident."""
-    # Hint: first decide the component(s) and the kind of symptom of the event; then, for each open
-    # incident still inside the time window, ask "same component, or a shared dependency for errors?".
+COMPONENT_KEYWORDS = {
+    "order-gateway": r"orders?|acknowledg\w*|reject\w*|503",
+    "market-data": r"quotes?|prices?|feed",
+    "settlement": r"batch",
+    "reference-db": r"reference[ _-]data",
+}
+
+
+def _component_pattern(component: str, keywords: str) -> re.Pattern[str]:
+    name = component.replace("-", "[-_ ]")
+    return re.compile(rf"\b(?:{name}|{keywords})", re.IGNORECASE)
+
+
+COMPONENT_PATTERNS = {
+    component: _component_pattern(component, keywords)
+    for component, keywords in COMPONENT_KEYWORDS.items()
+}
+ERROR_PATTERN = re.compile(r"error|reject|fail(?:ed|ure)|503", re.IGNORECASE)
+REQUEST_PREFIXES = ("request:", "please ")
+
+
+def is_request(text: str) -> bool:
+    return text.strip().lower().startswith(REQUEST_PREFIXES)
+
+
+def component_of(event: dict[str, Any]) -> str | None:
+    if event.get("component"):
+        return event["component"]
+    for component, pattern in COMPONENT_PATTERNS.items():
+        if pattern.search(event["text"]):
+            return component
     return None
+
+
+def has_errors(event: dict[str, Any]) -> bool:
+    return ERROR_PATTERN.search(event["text"]) is not None
+
+
+def dependencies_of(component: str) -> set[str]:
+    components = load_topology().components
+    pending = list(components[component].depends_on) if component in components else []
+    found: set[str] = set()
+    while pending:
+        name = pending.pop()
+        if name not in found:
+            found.add(name)
+            pending.extend(components[name].depends_on)
+    return found
+
+
+def shares_cause(event: dict[str, Any], other: dict[str, Any]) -> bool:
+    """Errors on two components that depend on the same thing are one problem."""
+    first, second = component_of(event), component_of(other)
+    if not (first and second and has_errors(event) and has_errors(other)):
+        return False
+    return bool(dependencies_of(first) & dependencies_of(second))
+
+
+def belongs_to(event: dict[str, Any], incident: dict[str, Any]) -> bool:
+    component = component_of(event)
+    for other in incident["events"]:
+        if component and component == component_of(other):
+            return True
+        if shares_cause(event, other):
+            return True
+    return False
+
+
+def correlate(
+    event: dict[str, Any], open_incidents: list[dict[str, Any]]
+) -> str | None:
+    """Return the key of the open incident this event belongs to, or None to open a new incident."""
+    if is_request(event["text"]):
+        return None
+    recent = [
+        incident
+        for incident in open_incidents
+        if event["time"] - incident["last_seen"] <= WINDOW_MINUTES
+    ]
+    matching = [incident for incident in recent if belongs_to(event, incident)]
+    if not matching:
+        return None
+    latest = max(matching, key=lambda incident: incident["last_seen"])
+    return latest["key"]
 
 
 # The server -----------------------------------------------------------------
@@ -81,23 +163,75 @@ def _open_incidents(tools: MeridianTools) -> dict[str, dict[str, Any]]:
     """Incident tickets already open when the run starts, in the shape `correlate` expects."""
     registry = {}
     for ticket in tools.sim.tickets.tickets:
-        if ticket.project == "MRX" and ticket.issue_type == "Incident" and ticket.status not in ("Resolved", "Closed"):
+        if (
+            ticket.project == "MRX"
+            and ticket.issue_type == "Incident"
+            and ticket.status not in ("Resolved", "Closed")
+        ):
             seen = _minutes(tools, ticket.created_tick)
-            event = {"source": "ticket", "time": seen, "component": ticket.component, "text": f"{ticket.summary}. {ticket.description}"}
-            registry[ticket.key] = {"key": ticket.key, "components": [ticket.component] if ticket.component else [], "first_seen": seen, "last_seen": seen, "events": [event]}
+            event = {
+                "source": "ticket",
+                "time": seen,
+                "component": ticket.component,
+                "text": f"{ticket.summary}. {ticket.description}",
+            }
+            registry[ticket.key] = {
+                "key": ticket.key,
+                "components": [ticket.component] if ticket.component else [],
+                "first_seen": seen,
+                "last_seen": seen,
+                "events": [event],
+            }
     return registry
 
 
 def build_server(tools: MeridianTools) -> FastMCP:
-    server = FastMCP("incidents", instructions="Registry of the incidents handled by the operations team.", version="0.1.0")
+    server = FastMCP(
+        "incidents",
+        instructions="Registry of the incidents handled by the operations team.",
+        version="0.1.0",
+    )
     registry = _open_incidents(tools)
     sim = tools.sim
 
-    # Write the description: when to call it, what to pass in each argument, what comes back.
-    @server.tool(description="Report an event.", run_in_thread=False)
-    def report_event(source: str, text: str, component: str | None = None) -> dict[str, Any]:
+    @server.tool(run_in_thread=False)
+    def report_event(
+        source: str, text: str, component: str | None = None
+    ) -> dict[str, Any]:
+        """Report one alert, ticket or member complaint about a possible fault.
+
+        Call it for every such signal, before opening any incident yourself: the server decides
+        whether the event belongs to an incident that is already open (same component, or errors
+        sharing a dependency, within 30 minutes) and only opens a new one when it does not.
+        Never open a second incident for the same problem. Do not call it for plain requests
+        (access, reports, test environments); it ignores them.
+
+        Args:
+            source: 'monitoring', 'ticket' or 'complaint'.
+            text: the original wording of the signal.
+            component: the affected component if it is known (for example 'order-gateway');
+                leave it out for complaints that do not name one.
+
+        Returns:
+            {incident, attached: true} when attached to an open incident,
+            {incident, attached: false, new_incident: true} when a new one was opened, or
+            {incident: null, ignored: 'request'} when the event is a request.
+        """
+
         def run() -> dict[str, Any]:
-            event = {"source": source, "time": _minutes(tools, sim.state.tick), "component": component, "text": text}
+            if is_request(text):
+                return {
+                    "incident": None,
+                    "attached": False,
+                    "new_incident": False,
+                    "ignored": "request",
+                }
+            event = {
+                "source": source,
+                "time": _minutes(tools, sim.state.tick),
+                "component": component,
+                "text": text,
+            }
             key = correlate(event, list(registry.values()))
             if key in registry:
                 incident = registry[key]
@@ -105,24 +239,61 @@ def build_server(tools: MeridianTools) -> FastMCP:
                 incident["last_seen"] = event["time"]
                 if component and component not in incident["components"]:
                     incident["components"].append(component)
-                sim.tickets.comment(key, f"[{source}] {text}", tools.actor, sim.state.tick, sim.clock)
-                return {"incident": key, "attached": True, "events_in_incident": len(incident["events"])}
+                sim.tickets.comment(
+                    key, f"[{source}] {text}", tools.actor, sim.state.tick, sim.clock
+                )
+                return {
+                    "incident": key,
+                    "attached": True,
+                    "events_in_incident": len(incident["events"]),
+                }
             ticket = sim.tickets.create(
-                {"project": "MRX", "issue_type": "Incident", "summary": text[:80], "description": f"[{source}] {text}", "component": component},
+                {
+                    "project": "MRX",
+                    "issue_type": "Incident",
+                    "summary": text[:80],
+                    "description": f"[{source}] {text}",
+                    "component": component,
+                },
                 tools.actor,
                 sim.state.tick,
                 sim.clock,
             )
-            registry[ticket.key] = {"key": ticket.key, "components": [component] if component else [], "first_seen": event["time"], "last_seen": event["time"], "events": [event]}
+            registry[ticket.key] = {
+                "key": ticket.key,
+                "components": [component] if component else [],
+                "first_seen": event["time"],
+                "last_seen": event["time"],
+                "events": [event],
+            }
             return {"incident": ticket.key, "attached": False, "new_incident": True}
 
-        return tools.record_call("incidents.report_event", {"source": source, "text": text, "component": component}, run)
+        return tools.record_call(
+            "incidents.report_event",
+            {"source": source, "text": text, "component": component},
+            run,
+        )
 
-    # Write the description.
-    @server.tool(description="List incidents.", run_in_thread=False)
+    @server.tool(run_in_thread=False)
     def list_incidents() -> dict[str, Any]:
+        """List the incidents currently open, without their events.
+
+        Call it to see what is already being handled before deciding what to do about a signal,
+        or to answer which incident a problem belongs to. Takes no arguments.
+
+        Returns:
+            {incidents: [{key, components, first_seen, last_seen, events}]} where times are
+            minutes since midnight and events is the number of events attached.
+        """
+
         def run() -> dict[str, Any]:
-            return {"incidents": [{key: value for key, value in incident.items() if key != "events"} | {"events": len(incident["events"])} for incident in registry.values()]}
+            return {
+                "incidents": [
+                    {key: value for key, value in incident.items() if key != "events"}
+                    | {"events": len(incident["events"])}
+                    for incident in registry.values()
+                ]
+            }
 
         return tools.record_call("incidents.list_incidents", {}, run)
 
