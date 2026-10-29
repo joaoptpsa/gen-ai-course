@@ -32,15 +32,18 @@ HERE = Path(__file__).resolve().parent
 def _load(name: str) -> Any:
     """Load a module that sits next to this file."""
     module_name = f"{name}_{abs(hash(HERE)) % 100_000}"
-    spec = importlib.util.spec_from_file_location(module_name, HERE / f"{name}.py")
+    path = HERE / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load module {name!r} from {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
 
 
-gateway = _load("gateway")
-incident_server = _load("incident_server")
+gateway = _load("gateway_user")
+incident_server = _load("incident_server_user")
 
 INSTRUCTIONS = """\
 You are the first-line incident agent for the Meridian Exchange.
