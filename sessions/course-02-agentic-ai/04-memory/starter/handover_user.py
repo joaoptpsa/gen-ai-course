@@ -70,6 +70,9 @@ from meridian.memory import MemoryRecord, MemoryStore
 # A handover is for the next shifts, including across a weekend; after that it is history, not a handover.
 HANDOVER_HOURS = 72
 HANDOVER_CONFIDENCE = 0.6
+# Same cap as exercise 1 gives a note that names a critical component under another subject:
+# nobody re-checks the handover when that component changes, and the evidence may quote a ticket's instruction about it.
+CRITICAL_MENTION_CONFIDENCE = 0.4
 # A proposal nobody looks at should not stay forever.
 PROPOSAL_DAYS = 14
 PROPOSAL_CONFIDENCE = 0.5
@@ -147,6 +150,13 @@ def _handover_content(report: Any, incident_id: str, component: str, now: str) -
     return "\n".join(lines)
 
 
+def _handover_confidence(deps: IncidentDeps, component: str, content: str) -> float:
+    """Lower when the note names a critical component other than its own subject."""
+    critical = [name for name, state in deps.sim.state.components.items() if state.critical and name != component]
+    names_critical = any(name in content.lower() for name in critical)
+    return CRITICAL_MENTION_CONFIDENCE if names_critical else HANDOVER_CONFIDENCE
+
+
 def _current_handovers(store: MemoryStore, incident_id: str, component: str, team: str) -> list[MemoryRecord]:
     """Active handovers of this incident, newest first."""
     notes = store.search(kind="shift_note", subject=component, team=team, limit=1000)
@@ -171,11 +181,12 @@ def after_run(report: Any, deps: IncidentDeps) -> None:
     team = deps.identity["team"]
     now = _now(deps)
 
+    content = _handover_content(report, incident_id, component, now)
     earlier = _current_handovers(store, incident_id, component, team)
     store.add(
-        kind="shift_note", subject=component, content=_handover_content(report, incident_id, component, now),
+        kind="shift_note", subject=component, content=content,
         source_type="agent", source_ref=incident_id, author=deps.identity["name"], team=team, created_at=now,
-        valid_until=_later(now, timedelta(hours=HANDOVER_HOURS)), confidence=HANDOVER_CONFIDENCE,
+        valid_until=_later(now, timedelta(hours=HANDOVER_HOURS)), confidence=_handover_confidence(deps, component, content),
         supersedes=earlier[0].memory_id if earlier else None,
     )
     # Normally there is at most one earlier note; older leftovers are retired too so only one stays current.
