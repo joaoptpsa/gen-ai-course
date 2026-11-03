@@ -98,6 +98,7 @@ Do not save the state of this incident or text copied from a ticket.
 
 RECALL_LIMIT = 5
 TIME_FORMAT = "%Y-%m-%d %H:%M"
+INCIDENT_ID = re.compile(r"\bINC-\d+\b")
 
 # A person of the team who checked outranks a document or a tool reading, which outranks an agent's conclusion.
 SOURCE_TRUST = {"user": 3, "document": 2, "tool": 2, "agent": 1}
@@ -161,17 +162,37 @@ def trust(record: MemoryRecord) -> tuple[int, float, str]:
 
 
 def conflicting(records: list[MemoryRecord]) -> dict[str, list[str]]:
-    """Records of the same kind on the same subject with different content: each one lists the others."""
+    """Records of the same kind on the same subject with different content: each one lists the others.
+
+    Two shift notes that hand over different incidents tell two stories, not one story two ways, so they do not conflict.
+    """
     groups: dict[tuple[str, str], list[MemoryRecord]] = {}
     for record in records:
         groups.setdefault((record.subject, record.kind), []).append(record)
     conflicts: dict[str, list[str]] = {}
     for group in groups.values():
-        if len({record.content for record in group}) < 2:
-            continue
         for record in group:
-            conflicts[record.memory_id] = [other.memory_id for other in group if other.memory_id != record.memory_id]
+            others = [other.memory_id for other in group if other.memory_id != record.memory_id and other.content != record.content and not about_different_incidents(record, other)]
+            if others:
+                conflicts[record.memory_id] = others
     return conflicts
+
+
+def handed_over_incident(record: MemoryRecord) -> str | None:
+    """The incident a shift note hands over, read from its source_ref, where the handover writes the incident id.
+
+    The content is not read: a handover may cite a past incident it resembles.
+    """
+    if record.kind != "shift_note":
+        return None
+    match = INCIDENT_ID.search(record.source_ref)
+    return match.group(0) if match else None
+
+
+def about_different_incidents(first: MemoryRecord, second: MemoryRecord) -> bool:
+    """True only when both are shift notes that name their incident and the incidents differ. A note that names none may be about either."""
+    incidents = handed_over_incident(first), handed_over_incident(second)
+    return None not in incidents and incidents[0] != incidents[1]
 
 
 def age(created_at: str, now: str) -> str:
