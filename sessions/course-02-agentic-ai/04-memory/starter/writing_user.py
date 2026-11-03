@@ -101,7 +101,9 @@ VALIDITY = {
 VERSIONED_VALIDITY = timedelta(days=30)
 
 USER_REF = re.compile(r"^user:\S+$")
-TOOL_REF = re.compile(r"^(?:logs/|metrics/|alerts/|changes/)\S+$|^(?:CHG|INC)-\d+$")
+TOOL_REF = re.compile(r"^(?:logs/|metrics/|alerts/|changes/)\S+$|^(?:CHG|INC|ACT)-\d+$")
+# A memory id points back at what memory already holds, with its own origin there; it adds no evidence of its own.
+MEMORY_REF = re.compile(r"^MEM-\d+$")
 DOCUMENT_REF = re.compile(r"^(?:email:|runbook:|doc:|wiki:)\S+$|^[A-Z][A-Z0-9]+-\d+$")
 
 # A password is a secret whatever it looks like; a key or token value is one only when it looks generated (8+ characters with a digit).
@@ -183,6 +185,8 @@ def origin_of(evidence: list[str]) -> tuple[str, str]:
 
 
 def _shape_of(ref: str) -> str | None:
+    if MEMORY_REF.match(ref):
+        return None
     if USER_REF.match(ref):
         return "user"
     if TOOL_REF.match(ref):
@@ -416,7 +420,8 @@ def remember(ctx: RunContext[IncidentDeps], note: str, subject: str, evidence: l
         e.g. "order-gateway 2.4.0 leaks memory on one instance at a time; restarting that instance fixes it."
       subject: the component it is about, e.g. "order-gateway".
       evidence: the ids the lesson rests on, as the tools gave them: metric refs ("metrics/order-gateway/15"),
-        log refs ("logs/order-gateway/53"), change ids ("CHG-4520"), ticket keys ("MRX-2301").
+        log refs ("logs/order-gateway/53"), change ids ("CHG-4520"), action ids ("ACT-001"), ticket keys ("MRX-2301").
+        A memory id ("MEM-0012") adds no evidence: cite what that memory sent you to read.
         Keep a note to its subject, and name no other component the lesson does not need.
 
     What happens
