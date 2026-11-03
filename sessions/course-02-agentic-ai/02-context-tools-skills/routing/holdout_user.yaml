@@ -1,0 +1,147 @@
+# Exercise 2 holdout: 20 incidents written by a separate agent that saw only the catalog's one-line
+# summaries, never routing/incidents.yaml or the router prompt. Same format as incidents.yaml.
+# Score with check_routing.py --harness starter/harness_user.py --incidents routing/holdout_user.yaml
+
+never: [read_logs_v1, get_metrics_legacy, restart_all]
+
+incidents:
+  - id: H01
+    text: "Incident INC-5001 (09:14): order-gateway-3 memory climbing past 93% and members reporting slow order acks"
+    needs:
+      - [read_instance_metrics]
+      - [restart_instance, drain_instance]
+      - [read_logs, summarize_logs, search_logs]
+      - [recent_changes]
+  - id: H02
+    text: "Incident INC-5002 (10:02): matching-engine latency p99 tripled since the open, no deploy that we know of"
+    needs:
+      - [read_metrics]
+      - [page_oncall, request_approval]
+      - [recent_changes]
+      - [read_logs, summarize_logs, search_logs]
+  - id: H03
+    text: "Incident INC-5003 (11:30): FOOBANK cannot log in to the FIX gateway since 11:20, other members fine"
+    needs:
+      - [member_login_attempts]
+      - [member_sessions]
+      - [list_members]
+      - [read_logs, search_logs, summarize_logs]
+  - id: H04
+    text: "Incident INC-5004 (12:45): the restart of order-gateway-2 sent at 12:31 with key rst-2-1231 timed out, unknown whether it ran"
+    needs:
+      - [action_status]
+      - [read_instance_metrics]
+      - [wait_for_recovery, read_metrics]
+  - id: H05
+    text: "Incident INC-5005 (13:05): CHG-4412 went live at 12:50 and order rejects are rising, board wants it undone if it is the cause"
+    needs:
+      - [recent_changes]
+      - [search_logs, read_logs]
+      - [rollback_change]
+      - [read_metrics]
+  - id: H06
+    text: "Incident INC-5006 (14:20): reference-db connections timing out from order-gateway, instrument lookups failing"
+    needs:
+      - [check_link]
+      - [read_metrics]
+      - [page_oncall, request_approval]
+      - [reference_data_lookup, read_logs, summarize_logs]
+  - id: H07
+    text: "Incident INC-5007 (15:10): ALR-9150 firing again, same alert as MRX-2210 last week, need to know what fixed it then"
+    needs:
+      - [read_alert]
+      - [read_ticket]
+      - [find_runbook, read_runbook]
+      - [list_alerts]
+  - id: H08
+    text: "Incident INC-5008 (08:40): market data looks stale for several instruments, quotes not moving since 08:31"
+    needs:
+      - [market_data_feed_status]
+      - [order_book_snapshot]
+      - [read_metrics]
+      - [read_logs, summarize_logs, search_logs]
+  - id: H09
+    text: "Incident INC-5009 (16:00): settlement batch SB-3071 stuck in pending, cut-off in 45 minutes"
+    needs:
+      - [settlement_batches]
+      - [read_logs, summarize_logs, search_logs]
+      - [send_message, page_oncall]
+      - [find_runbook, read_runbook]
+  - id: H10
+    text: "Incident INC-5010 (07:55): members getting TLS handshake errors connecting to the gateways before the open"
+    needs:
+      - [certificate_status]
+      - [dns_lookup]
+      - [read_logs, summarize_logs]
+      - [send_message, page_oncall]
+  - id: H11
+    text: "Incident INC-5011 (17:25): order-gateway log volume exploded and a host is almost out of space"
+    needs:
+      - [disk_usage]
+      - [read_logs, summarize_logs]
+      - [read_instance_metrics]
+      - [recent_changes]
+  - id: H12
+    text: "Incident INC-5012 (09:48): order-gateway CPU saturated across all instances, traffic is double normal"
+    needs:
+      - [read_instance_metrics]
+      - [scale_out]
+      - [exchange_status]
+      - [drain_instance, scale_out]
+  - id: H13
+    text: "Incident INC-5013 (13:40): incident resolved at 13:35, close out: tell #ops-incidents, update MRX-2301 and write it up"
+    needs:
+      - [send_message]
+      - [comment_ticket]
+      - [create_postmortem]
+      - [read_ticket]
+  - id: H14
+    text: "Incident INC-5014 (10:30): is today a half day? members asking why the session closes early and what fees apply to tier 2"
+    needs:
+      - [trading_calendar]
+      - [fee_schedule]
+      - [exchange_status]
+  - id: H15
+    text: "Incident INC-5015 (18:10): runbook for order-gateway says version 4.1 but production runs 4.3, unsure what to follow"
+    needs:
+      - [find_runbook]
+      - [list_runbooks]
+      - [recent_changes]
+      - [read_instance_metrics, read_metrics]
+  - id: H16
+    text: "Incident INC-5016 (11:05): need to flush the order-gateway cache after a bad reference load, who can approve and who is on call"
+    needs:
+      - [flush_cache]
+      - [oncall_schedule]
+      - [request_approval, page_oncall]
+      - [recent_changes]
+  - id: H17
+    text: "Incident INC-5017 (14:50): BIGBROKER says half their sessions dropped, which gateway were they on and are they all back"
+    needs:
+      - [member_sessions]
+      - [list_members]
+      - [read_instance_metrics, read_metrics]
+      - [search_logs, read_logs]
+  - id: H18
+    text: "Incident INC-5018 (09:05): matching-engine process died and restarted itself, nothing in chat about it yet"
+    needs:
+      - [page_oncall, request_approval]
+      - [send_message]
+      - [exchange_status]
+      - [read_logs, summarize_logs, search_logs]
+      - [recent_changes]
+  - id: H19
+    text: "Incident INC-5019 (16:45): a bunch of alerts firing at once, can't tell which are real, which component is the rarest one"
+    needs:
+      - [list_alerts]
+      - [exchange_status]
+      - [summarize_logs, read_logs]
+      - [read_metrics]
+  - id: H20
+    text: "Incident INC-5020 (12:15): CHG-4420 changed a config last night, strange rejects for ACMEBANK on instrument XS0001234567 only"
+    needs:
+      - [search_logs, read_logs]
+      - [reference_data_lookup]
+      - [member_login_attempts, member_sessions]
+      - [recent_changes]
+      - [search_tickets]
