@@ -239,6 +239,32 @@ In conflict run 1 the model's change note "CHG-4471 is still active" superseded 
 MEM-0002. It was a document because it cited memory ids, the same rank as an agent note, and it
 corrects it. The on-call note MEM-0003 stayed.
 
+## Dates in the Change List
+
+Conflict runs 1 and 2 of the first integrated set named CHG-4310 next to CHG-4471 as a possible
+cause. The agent read the 2.4.0 deploy of 2026-11-03 08:50 as one minute before today's errors at
+08:51. `recent_changes` already gave the full date, but no current time and no age, so the model
+compared times of day.
+
+`starter/harness_user.py` now wraps `recent_changes` the way session 1's `harness_v2.py` does. The
+answer carries `as_of`, the date and time of the answer, and each change carries `minutes_ago`. In
+this case CHG-4310 shows as 1,460 minutes old at `as_of` 2026-11-04 09:10.
+
+| Run | Result | Input tokens | Requests | CHG-4310 in `root_cause` |
+| --- | --- | --- | --- | --- |
+| conflict 1 | PASS | 32,079 | 4 | second candidate, "began with that release's connection handling" |
+| conflict 2 | PASS | 43,219 | 5 | "possible contributor", no timing claim |
+| conflict 3 | PASS | 57,485 | 6 | one of three suspects, no timing claim |
+| stale 1 | PASS | 94,922 | 9 | the cause, correctly: the 2.4.0 leak |
+
+No run read CHG-4310 as just before the errors, and the evidence of runs 2 and 3 quotes its date
+as 11-03. All three conflict runs still named it. The reason is now its content: a "connection
+pooling" change on the alerting component, next to "database connection rejected" errors. That is a
+fair suspect to hand to a person, and the case does not grade `root_cause`. Run 3 also used the
+dates against the real cause: "the CHG-4471 timing (01:30) does not match the error start (08:51)",
+so it reported the cause as not confirmed. Three runs show the misreading did not come back; they
+do not show it is gone.
+
 ## Open
 
 - `reconcile` keeps a weaker origin from replacing a stronger one, so a tool lesson that says a
@@ -247,10 +273,9 @@ corrects it. The on-call note MEM-0003 stayed.
   same kind.
 - `changes_since` looks at the record's subject only. A memory about order-gateway is not flagged
   after a change to reference-db, its dependency.
-- Conflict runs 1 and 2 named CHG-4310 next to CHG-4471 as a possible cause. The agent read the
-  2.4.0 deploy of 2026-11-03 08:50 as one minute before today's errors at 08:51. The case does not
-  grade `root_cause`. That `INSTRUCTIONS` asks for `recent_changes` without a component, which
-  lists CHG-4310, is a hypothesis for the hedge; I did not test it.
+- CHG-4310 is still named as a second suspect in the conflict case, now on its content rather than
+  its date (see Dates in the Change List). That `INSTRUCTIONS` asks for `recent_changes` without a
+  component, which lists CHG-4310, may add to it; I did not test it.
 - Bag of words. No stemming ("instance" and "instances" differ) and no negation ("memory flat"
   matches "memory rising").
 - Timestamps are compared as `YYYY-MM-DD HH:MM` strings, as `meridian/memory.py` documents. A
