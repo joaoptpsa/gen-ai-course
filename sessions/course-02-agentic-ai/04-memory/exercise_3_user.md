@@ -124,6 +124,7 @@ when a person approves it.
 | --- | --- |
 | `check_handover.py`, starter `handover_user.py` | 2/11 (tests 7 and 10 pass because the starter refuses everything) |
 | `check_handover.py`, final | 11/11 |
+| `check_handover.py`, final, with exercise 2's `reading_user.py` from commit 1751f34 (temporary copy, no model) | 11/11 |
 | Ephemeral edge cases, no model (deleted after the run) | 12/12: critical proposal, repeated incident ids, expired proposal, self-approval, approver with no fields, incident manager approves, approve twice, approve a procedure, forget a version chain, forget again, empty reason, unknown id. The note for a report with a wrong incident id and a phone in an action was read by eye: right id, phone removed. |
 | Ephemeral redaction test, no model (deleted after the run) | 25/25: 10 phones and e-mails removed (dashes, dots, brackets, `00` prefix, next to a date), 15 dates, versions, ids and readings kept |
 | Final redaction on the 13 records runs 1 to 3 stored | 0 changed |
@@ -170,6 +171,12 @@ its day 1 handover. The final redaction did not run with the model. Proposals we
   approved procedure. Deleting a procedure probably needs the same roles as approving one.
 - A proposal stays valid for 14 days even after a change fixes its cause. It should expire when a
   change lands on its component.
+- Two handovers of different incidents on one component both stay current for 72 hours. Exercise
+  2's `recall` (commit 1751f34) flags them as a conflict: on run 4's store after day 2, MEM-0002
+  (INC-4110) and MEM-0005 (INC-4121) came back as "May conflict". Day 2 itself reads only the day 1
+  note, so these runs are not affected; a third shift within 72 hours would be. Either `recall`
+  should not count shift notes of different incidents as a conflict, or `after_run` should
+  supersede the last closed handover of the component.
 - No run approved a proposal: `approve` is called by people, and only the check script and the
   ephemeral test call it.
 - 3 runs per side is enough to see that memory did not change the result here. It is not enough
