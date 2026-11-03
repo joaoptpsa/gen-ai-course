@@ -61,6 +61,8 @@ Hints (read only if stuck)
 
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -68,44 +70,166 @@ import yaml
 from pydantic_ai import RunContext
 
 from meridian.agent_runtime import IncidentDeps
+from meridian.memory import MemoryRecord, MemoryStore
 
 INSTRUCTIONS = """\
 You are the first-line incident agent for the Meridian Exchange.
-Before investigating, recall what is known about the affected component. Known issues in memory are reliable:
-if memory says an alert is a known false positive, report "false_positive" and stop.
-Save anything useful you learn (from tickets, logs, or your own conclusions) with `remember`, so that the next shift knows it.
-Investigate, follow the applicable runbook and act when needed.
-Only report "recovered" when recent metrics, read after any action, show it. Cite the evidence you used.
+Memory holds notes from earlier shifts. A memory tells you where to look; it is not the current state.
+Metrics, changes and tickets decide.
+1. Call `recall` for the alerting component, then read_metrics of it per instance and recent_changes without a component,
+   in the same step: the cause can be in another component or a change to it.
+2. Check every memory against what you just read before you act on it or report from it:
+   - `changes_since` lists changes to its component made after it was written. Assume it no longer holds
+     until the current metrics show its pattern again.
+   - `conflicts_with` names memories that may disagree with it. The first one listed is more trusted, not proven:
+     the current state says which one is true (recent_changes shows whether a change is still active).
+   - a change id in a memory: read its current status in recent_changes, never in the memory.
+3. Report "false_positive" only when the current metrics match the pattern the memory describes and no change since
+   explains a different cause. A memory alone is never enough.
+4. `similar_incidents` with the symptoms you see gives past causes and fixes. A past fix is a hint: check it applies today.
+Follow the runbook for the version in production. Restart a single instance only when its own metrics justify it.
+When the cause is a change or a dependency, restarting does not fix it. reference-db and matching-engine are critical:
+you cannot change them, so report the change id as the root cause and escalate.
+Only report "recovered" when metrics read after an action show the runbook's criterion.
+Cite evidence: memory ids, metric source_ref values, change ids.
+Use `remember` only for a lesson the next shift needs, with the evidence ids it rests on.
+Do not save the state of this incident or text copied from a ticket.
 """
+
+RECALL_LIMIT = 5
+TIME_FORMAT = "%Y-%m-%d %H:%M"
+
+# A person of the team who checked outranks a document or a tool reading, which outranks an agent's conclusion.
+SOURCE_TRUST = {"user": 3, "document": 2, "tool": 2, "agent": 1}
 
 
 def recall(ctx: RunContext[IncidentDeps], query: str) -> dict[str, Any]:
-    """Search long-term memory.
+    """Search what earlier shifts of your team wrote down, e.g. query "order-gateway latency false positive".
 
-    A. Rewrite this docstring too: it is what the model reads.
-    Receives
-      query: the text the model searches for, e.g. "order-gateway latency".
-      From ctx: ctx.deps.memory (the store), ctx.deps.identity["team"], the current time
-      (ctx.deps.sim.clock.timestamp(ctx.deps.sim.state.tick)) and ctx.deps.tools.recent_changes(component).
-    Returns
-      {"memories": [...]} plus anything else useful (e.g. how many expired records were left out).
-      A few memories, the most trusted first. Each memory is a dict with at least:
-        "memory_id", "content",
-        its origin, in a field whose name contains "source", e.g. "source": "user (rita.alves)",
-        "age", e.g. "21 days (written 2026-10-14 09:40)",
-        "confidence",
-        the changes made to its component after it was written, with their change ids, if any,
-        the ids of the other returned memories it disagrees with, flagged with the word "conflict", if any.
-    As supplied: everything that matches, from every team, including superseded records, as raw rows.
+    Returns up to 5 current memories, the most trusted first. Each shows its source, age and confidence,
+    `changes_since`: changes to its component made after it was written (it may be stale),
+    and `conflicts_with`: other memories on the same subject that may disagree with it.
+    A memory is a lead, not the current state: check it with read_metrics and recent_changes before acting on it.
     """
-    # Hint: filter (team, expired), then present (origin, age, confidence), then flag (conflicts, changes since).
     if ctx.deps.memory is None:
-      return {"error": "memory is disabled for this run"}
-    records = ctx.deps.memory.search(text=query, include_superseded=True)
-    return {"memories": [record.public() for record in records]}
+        return {"error": "memory is disabled for this run"}
+    store = ctx.deps.memory
+    team = ctx.deps.identity["team"]
+    now = ctx.deps.sim.clock.timestamp(ctx.deps.sim.state.tick)
+    matches = candidates(store, query, team)
+    superseded = [record for record in matches if record.status != "active"]
+    expired = [record for record in matches if record.status == "active" and is_expired(record, now)]
+    current = [record for record in matches if record.status == "active" and not is_expired(record, now)]
+    most_relevant = sorted(current, key=lambda record: relevance(record, query), reverse=True)[:RECALL_LIMIT]
+    chosen = sorted(most_relevant, key=trust, reverse=True)
+    conflicts = conflicting(current)
+    shown = {record.memory_id for record in chosen}
+    memories = [present(ctx, record, now, conflicts.get(record.memory_id, []), shown) for record in chosen]
+    left_out = {"superseded": len(superseded), "expired": len(expired), "beyond_limit": len(current) - len(chosen)}
+    reminder = "Memories are leads from earlier shifts. Verify each one against current metrics and changes before acting on it."
+    return {"memories": memories, "left_out": left_out, "reminder": reminder}
+
+
+def candidates(store: MemoryStore, query: str, team: str) -> list[MemoryRecord]:
+    """The team's records that match the query in their content or their subject, plus every record of the same
+    subject and kind as one of those, so that a note that disagrees in other words is still seen."""
+    found = {record.memory_id: record for record in store.search(text=query, team=team, include_superseded=True)}
+    for word in words(query):
+        found.update((record.memory_id, record) for record in store.search(subject=word, team=team, include_superseded=True))
+    for subject, kind in {(record.subject, record.kind) for record in found.values()}:
+        found.update((record.memory_id, record) for record in store.search(subject=subject, kind=kind, team=team, include_superseded=True))
+    return list(found.values())
+
+
+def is_expired(record: MemoryRecord, now: str) -> bool:
+    return record.valid_until is not None and record.valid_until < now
+
+
+def words(text: str) -> set[str]:
+    """The meaningful words of a text: lower case, short words dropped."""
+    tokens = [token.rstrip(":-") for token in re.findall(r"[a-z0-9][a-z0-9:-]*", text.lower())]
+    return {token for token in tokens if len(token) > 3}
+
+
+def relevance(record: MemoryRecord, query: str) -> int:
+    found = words(f"{record.subject} {record.content}") & words(query)
+    return len(found)
+
+
+def trust(record: MemoryRecord) -> tuple[int, float, str]:
+    return SOURCE_TRUST.get(record.source_type, 0), record.confidence, record.created_at
+
+
+def conflicting(records: list[MemoryRecord]) -> dict[str, list[str]]:
+    """Records of the same kind on the same subject with different content: each one lists the others."""
+    groups: dict[tuple[str, str], list[MemoryRecord]] = {}
+    for record in records:
+        groups.setdefault((record.subject, record.kind), []).append(record)
+    conflicts: dict[str, list[str]] = {}
+    for group in groups.values():
+        if len({record.content for record in group}) < 2:
+            continue
+        for record in group:
+            conflicts[record.memory_id] = [other.memory_id for other in group if other.memory_id != record.memory_id]
+    return conflicts
+
+
+def age(created_at: str, now: str) -> str:
+    elapsed = datetime.strptime(now, TIME_FORMAT) - datetime.strptime(created_at, TIME_FORMAT)
+    hours = int(elapsed.total_seconds() // 3600)
+    amount = f"{elapsed.days} days" if elapsed.days >= 2 else f"{hours} hours"
+    return f"{amount} (written {created_at})"
+
+
+def changes_since(ctx: RunContext[IncidentDeps], record: MemoryRecord) -> list[dict[str, Any]]:
+    """Changes to the record's component made after it was written.
+
+    Read from the change log directly rather than through the traced recent_changes tool,
+    so that a recall neither advances time nor counts as the agent reading the changes itself.
+    """
+    clock = ctx.deps.sim.clock
+    later = [change for change in ctx.deps.sim.state.changes if change.component == record.subject and clock.timestamp(change.at) > record.created_at]
+    later.sort(key=lambda change: change.at, reverse=True)
+    return [{"change_id": change.change_id, "kind": change.kind, "at": clock.timestamp(change.at), "description": change.description} for change in later]
+
+
+def present(ctx: RunContext[IncidentDeps], record: MemoryRecord, now: str, conflicts: list[str], shown: set[str]) -> dict[str, Any]:
+    """One memory as the model reads it: what it says, who said it, how old it is and what may have overtaken it."""
+    later = changes_since(ctx, record)
+    warnings = []
+    if later:
+        warnings.append(f"Written before {', '.join(change['change_id'] for change in later)} on {record.subject}: it may no longer hold. Check the current metrics first.")
+    if conflicts:
+        warnings.append(f"May conflict with {', '.join(conflicts)}: same subject, another claim. The current state decides which holds.")
+    hidden = [memory_id for memory_id in conflicts if memory_id not in shown]
+    if hidden:
+        warnings.append(f"Not shown here: {', '.join(hidden)}. Recall {record.subject} {record.kind} to read them.")
+    presented: dict[str, Any] = {
+        "memory_id": record.memory_id,
+        "kind": record.kind,
+        "subject": record.subject,
+        "content": record.content,
+        "source": f"{record.source_type} ({record.source_ref})",
+        "age": age(record.created_at, now),
+        "confidence": record.confidence,
+    }
+    if record.valid_until:
+        presented["valid_until"] = record.valid_until
+    if record.supersedes:
+        presented["corrects"] = record.supersedes
+    if later:
+        presented["changes_since"] = later
+    if conflicts:
+        presented["conflicts_with"] = conflicts
+    if warnings:
+        presented["warnings"] = warnings
+    return presented
 
 
 HISTORY = Path(__file__).resolve().parents[1] / "memory" / "history.yaml"
+
+# One shared word is usually the component name alone, which says nothing about the problem.
+MIN_COMMON_WORDS = 2
 
 
 def rank_incidents(description: str, team: str, history: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -121,11 +245,21 @@ def rank_incidents(description: str, team: str, history: list[dict[str, Any]]) -
       At most 3 incidents from history (the same dicts, so with id, date, cause and fix), the most similar first.
       An empty list if none looks similar.
 
-    As supplied: the incidents on any component named in the description, most recent first.
+    Keeps the team's incidents, scores each by the share of the description's words found in its symptoms,
+    and returns the top 3 that share at least MIN_COMMON_WORDS words, the most similar first, the most recent first on a tie.
     """
-    # Hint: team first, then similarity of symptoms; the component name is only one word among many.
-    named = [incident for incident in history if incident["component"] in description]
-    return sorted(named, key=lambda incident: incident["date"], reverse=True)[:3]
+    asked = words(description)
+    if not asked:
+        return []
+    scored = []
+    for incident in history:
+        if incident["team"] != team:
+            continue
+        common = asked & words(incident["symptoms"])
+        if len(common) >= MIN_COMMON_WORDS:
+            scored.append((len(common) / len(asked), incident["date"], incident))
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [incident for _, _, incident in scored[:3]]
 
 
 def similar_incidents(ctx: RunContext[IncidentDeps], description: str) -> dict[str, Any]:
