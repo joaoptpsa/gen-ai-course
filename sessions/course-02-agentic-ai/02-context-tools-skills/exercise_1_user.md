@@ -110,6 +110,26 @@ with the tool. The first line stays a stand-alone summary, because the catalog s
 - **"Critical components cannot be changed by you" in `INSTRUCTIONS`.** The agent read it as a
   reason not to roll back. The executor already refuses changes to critical components.
 
+## Where the First Policy Dropped What the Agent Needed
+
+The first `build_prompt` kept only the incident line. The alert and log dumps it replaced also
+carried every component name, and nothing else in that version gave the names. In
+`s02-hidden-config-change` the agent then guessed a component called `database`:
+
+| Call | Result |
+| --- | --- |
+| `read_metrics(component="database")` | `Unknown component: database` |
+| `summarize_logs(component="database")` | `total_lines: 0` |
+| `summarize_logs(component="order-gateway-1")` | `total_lines: 0` |
+
+It still found `CHG-4471` on `reference-db`, but only as "Probable", and the wasted requests took
+the run to 50,507 tokens, a FAIL on the budget. A component list in the prompt stopped the
+guessing. It was removed later, because the `Args:` docstrings list the names and the guessing did
+not come back (see Tried and Removed).
+
+This comes from the session transcript of 2026-10-27, not from git. Git holds only the final
+version of each commit.
+
 ## Measured Results
 
 Three full runs of the four cases with the final `context_user.py`, input tokens per run:
