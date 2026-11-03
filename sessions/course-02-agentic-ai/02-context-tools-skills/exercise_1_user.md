@@ -144,7 +144,68 @@ Three full runs of the four cases with the final `context_user.py`, input tokens
 All 12 runs passed, the highest at 36,270 tokens against the 40,000 budget. Token counts vary
 between runs, because the model chooses its calls.
 
+## New Case: `s02-feed-scale-change`
+
+The gateway rejects a quarter of its orders with HTTP 503. The cause is one line in the
+`market-data` logs, two hops away: the gateway depends on `matching-engine`, which depends on
+`market-data`.
+
+| Where | What the agent sees |
+| --- | --- |
+| `order-gateway` logs | `reason=matching-engine rejected order: price outside band`, 21 lines, plus one rare `config reloaded: session_timeout_s 30 -> 45 (CHG-4507)` at 14:42 |
+| `matching-engine` logs | `price band check failed: last price off by 100x`, 22 lines |
+| `market-data` logs | One line at 14:45: `publisher reloaded: price_scale 4 -> 2 for all symbols (CHG-4512); consumers still decode with scale 4` |
+| `market-data` metrics | Healthy: 3 ms latency, 0.1% errors, no alert |
+| `recent_changes` | `CHG-4512` "Refresh market-data publisher settings" and `CHG-4507` "Tune order-gateway session timeouts" |
+
+The check expects a rollback of `CHG-4512`, no rollback of `CHG-4507`, no restart, a report that
+names `CHG-4512` and claims recovery, and gateway and matching-engine error rates under 1% for 5
+ticks.
+
+How it differs from the other two cases with the cause elsewhere:
+
+| Case | Line is in | Hops from the alert | Fix |
+| --- | --- | --- | --- |
+| `s02-hidden-config-change` | `reference-db`, critical | 1 | None, report only |
+| `s02-firewall-change` | `order-gateway` itself | 0 | Roll back |
+| `s02-feed-scale-change` | `market-data`, not critical | 2 | Roll back, and skip a decoy |
+
+The naive approach misses it in three ways:
+
+- Reading only the alerting component's rare lines finds `CHG-4507`. It is a change on the gateway,
+  3 minutes before the errors, and rolling it back fixes nothing.
+- Checking only direct dependencies stops at `matching-engine`, which is critical and only shows the
+  symptom.
+- Metrics point nowhere: `market-data` looks healthy. Only its logs explain the errors, and only
+  the log line ties the bland description of `CHG-4512` to the price errors.
+
+### Runs
+
+Five runs with `harness_user.py`, which loads all three `_user` files:
+
+| Run | Requests | Input tokens | Tool calls | Result |
+| --- | --- | --- | --- | --- |
+| 1 | 6 | 36,246 | 12 | PASS |
+| 2 | 6 | 35,362 | 11 | PASS |
+| 3 | 7 | 41,301 | 13 | FAIL, budget only |
+| 4 | 6 | 33,942 | 11 | PASS |
+| 5 | 7 | 45,546 | 14 | FAIL, budget only |
+
+In all 5 runs the agent followed gateway, matching-engine, market-data, cited the
+`market-data` line, rolled back `CHG-4512` once and left `CHG-4507` alone. Every other check
+passed.
+
+Both failures made a 7th request. In each, the agent called `search_tools` for a rollback tool
+before rolling back. From the trace, the router had not offered `rollback_change` at the start. In
+the passing runs it rolled back without searching. That is exercise 2's router, not this file.
+
+I left `context_user.py` unchanged. Every tool result of a run adds up to about 6,600 characters,
+roughly 2k tokens: metrics 1,362, runbook 733, the three log summaries 1,056, 711 and 586, changes
+784, metrics again 1,338. The rest of the 34k to 46k is resent on every request: instructions,
+tool definitions and the conversation. So the cost follows the number of requests, and a smaller
+summary would barely move it.
+
 ## Open
 
-- The new case where the cause is a rare log line in a component the alert does not mention.
-- Exercises 2 and 3.
+- `s02-feed-scale-change` passes in 3 of 5 runs. The failures come from the router missing
+  `rollback_change`, which belongs to exercise 2.
