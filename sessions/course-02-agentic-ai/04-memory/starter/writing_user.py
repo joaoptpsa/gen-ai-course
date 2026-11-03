@@ -407,6 +407,8 @@ def remember(ctx: RunContext[IncidentDeps], note: str, subject: str, evidence: l
     Save what will still be true tomorrow: a known issue and its fix, what a change did, open work the next shift must pick up.
     Do not save the state of this incident (a metric value, who reported what, when it started, what you sent):
     the next shift reads the metrics and the incident record again.
+    Leave out what you checked and found fine on other components ("reference-db and matching-engine were healthy"):
+    that is state too, and a note that names matching-engine or reference-db under another subject is kept at low trust, lesson and all.
     Never save personal data (phone numbers, e-mail addresses) or secrets (tokens, passwords).
 
     Pass
@@ -415,7 +417,7 @@ def remember(ctx: RunContext[IncidentDeps], note: str, subject: str, evidence: l
       subject: the component it is about, e.g. "order-gateway".
       evidence: the ids the lesson rests on, as the tools gave them: metric refs ("metrics/order-gateway/15"),
         log refs ("logs/order-gateway/53"), change ids ("CHG-4520"), ticket keys ("MRX-2301").
-        Keep a note to its subject. What it says about matching-engine or reference-db is kept at low trust unless that is the subject and its own metrics or logs are cited.
+        Keep a note to its subject, and name no other component the lesson does not need.
 
     What happens
       - With metrics, logs or changes as evidence the note is trusted most. With a ticket it is trusted less: a ticket is someone's text.
