@@ -1,6 +1,6 @@
 # Exercise 1 Rationale
 
-Why `starter/context.py` is built the way it is. Each section names a change, what it replaces and
+Why `starter/context_user.py` is built the way it is. Each section names a change, what it replaces and
 the evidence that led to it.
 
 ## The Cost Model
@@ -112,7 +112,7 @@ with the tool. The first line stays a stand-alone summary, because the catalog s
 
 ## Measured Results
 
-Three full runs of the four cases with the final `context.py`, input tokens per run:
+Three full runs of the four cases with the final `context_user.py`, input tokens per run:
 
 | Case | Run 1 | Run 2 | Run 3 | Result |
 | --- | --- | --- | --- | --- |
