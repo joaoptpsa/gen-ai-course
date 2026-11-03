@@ -224,6 +224,17 @@ All three exercise files, final code, through `harness_user.py`. Each pair used 
 | No memory 2 | 2 | none | PASS | 70,180 | 8 | 12 | 10:46, `order-gateway-1` |
 | No memory 3 | 2 | none | PASS | 71,240 | 8 | 12 | 10:46, `order-gateway-1` |
 
+One more pair ran after `recent_changes` gained `as_of` and `minutes_ago` (commit `c3805d7`), with
+its own store (`runs/s04-dated-pair-1.db`):
+
+| Run | Day | Memory | Result | Input tokens | Requests | Calls | Restart at |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Dated pair 1 | 1 | store | PASS | 106,354 | 9 | 13 | 10:11, `order-gateway-2` |
+| Dated pair 1 | 2 | store | PASS | 101,760 | 9 | 13 | 10:46, `order-gateway-1` |
+
+Day 2 recalled the day 1 lesson first, then read the metrics and restarted only the instance that
+leaks today. The change did not alter the result.
+
 No integrated run called `propose_procedure`, so the proposal path ran only in the earlier runs and
 the check script. Each store after day 2 holds 4 records: the two handovers at 0.4 and the two
 lessons. Pair 1 kept a lesson at 0.8 and a hypothesis at 0.3, pair 3 two lessons at 0.8. In pair 2
