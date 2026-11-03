@@ -459,8 +459,11 @@ def remember(ctx: RunContext[IncidentDeps], note: str, subject: str, evidence: l
     if change["op"] == "ignore":
         return {"saved": False, "detail": f"Already known: {change.get('target')}.", **notice}
     if change["op"] == "update":
-        record = ctx.deps.memory.update(change["target"], content=change.get("content") or decision["content"])
-        return {"updated": record.memory_id, "detail": "Merged into the existing record.", **notice}
+        # The merged text holds the new note too, so it is trusted no more than the new note alone.
+        target = ctx.deps.memory.get(change["target"])
+        merged_confidence = min(target.confidence, decision["confidence"])
+        record = ctx.deps.memory.update(change["target"], content=change.get("content") or decision["content"], confidence=merged_confidence)
+        return {"updated": record.memory_id, "detail": "Merged into the existing record.", "confidence": record.confidence, **notice}
     record = ctx.deps.memory.add(
         **decision,
         supersedes=change.get("target") if change["op"] == "supersede" else None,
