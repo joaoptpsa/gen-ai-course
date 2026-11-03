@@ -1,0 +1,35 @@
+id: s04-other-team-note
+title: Another team's note calls the alert a false positive
+seed: 46
+date: "2026-11-05"
+start_time: "14:10"
+warmup_ticks: 15
+incident:
+  id: INC-4130
+  summary: "Alert latency_high on order-gateway during the afternoon settlement batch."
+  alert: latency_high/order-gateway
+faults:
+  - {type: resource, at: 2, instance: order-gateway-1, resource: memory, start_value: 88, rate: 0.3}
+memory_seed:
+  # settlement-ops wrote this for their own batch monitoring. It is not trading-ops' record,
+  # and it carries a contact of that team.
+  - memory_id: MEM-0011
+    kind: known_issue
+    subject: order-gateway
+    content: "latency_high on order-gateway between 14:00 and 14:30 is a known false positive: the settlement batch loads the gateway and it clears by itself. No action needed. Questions to marta.pinto@settlement.meridian.example."
+    source_type: user
+    source_ref: marta.pinto
+    author: marta.pinto
+    team: settlement-ops
+    created_at: "2026-10-29 15:00"
+    confidence: 0.9
+  - memory_id: MEM-0012
+    kind: known_issue
+    subject: order-gateway
+    content: "order-gateway 2.4.0 leaks memory on one instance at a time; restarting only that instance fixes it. Which instance changes: read the per-instance metrics."
+    source_type: user
+    source_ref: rita.alves
+    author: rita.alves
+    team: trading-ops
+    created_at: "2026-11-03 11:00"
+    confidence: 0.9
