@@ -10,6 +10,10 @@ short.
 model. The upstream starter harness also passed each case in its one run, so these two cases do
 not tell the starter and the final policy apart with `claude-haiku-5-5`.
 
+Those runs had the starter `writing_user.py` and `handover_user.py`. With all three exercise files
+together, each case passed 3 of 3 runs on the final code. The new case `s04-other-team-note` does
+tell them apart: it passed 3 of 3 through `harness_user.py` and failed 2 of 2 through the starter.
+
 ## Design
 
 | Part | What it does |
@@ -86,6 +90,78 @@ it asks for `reference-db CHG-4471 rollback`. The candidates now take same subje
 partners too. The upstream starter run shows the same miss: its first recall returned MEM-0002
 only, and the model found MEM-0003 with a second recall.
 
+## Integration: Handovers Are Not Conflicts
+
+Exercise 3's `after_run` writes one shift note per incident, valid for 72 hours. After day 1 and day
+2 of the recurring leak, order-gateway has two current handovers, for INC-4110 and INC-4121. The
+first conflict rule flagged any two records of the same subject and kind, so a third shift read
+them as "May conflict". They do not disagree: they tell two stories.
+
+Two fixes were possible. I chose the one in `recall`.
+
+| Option | What it costs |
+| --- | --- |
+| `recall` does not count shift notes of different incidents as a conflict | One rule in `conflicting`. Both handovers stay current, so a third shift still sees that the leak hit two instances on two days. |
+| `after_run` supersedes the component's previous closed handover | Hides the earlier incident from the next shift, and needs a rule for "closed". The day 1 note is history the third shift can use, not a wrong note. |
+
+The rule: two shift notes do not conflict when both name an incident in `source_ref` and the
+incidents differ. `after_run` writes the incident id there. The content is not read, because a
+handover may cite a past incident it resembles. A note that names no incident may be about either,
+so it still conflicts. That keeps the case: MEM-0002 has `night run INC-4090`, MEM-0003 has
+`rita.alves`, and they are still flagged. Other kinds keep the first rule.
+
+| Store | Before | After |
+| --- | --- | --- |
+| Exercise 3's run 4, after day 2 | MEM-0002 (INC-4110) and MEM-0005 (INC-4121) flagged "May conflict" | not measured again |
+| Integrated pairs 1 to 3, recalled as a third shift on 2026-11-05 14:10 (no model) | not measured | the two handovers come back with no conflict, in all 3 stores |
+| `s04-conflicting-shift-notes` seed | MEM-0002 and MEM-0003 flagged | still flagged; `check_recall.py` test 6 passes |
+
+## A Case the Starter Fails: `s04-other-team-note`
+
+The README asks for one new case with `memory_seed` that the policy handles and the starter does
+not. The earlier cases did not tell them apart, because the model's caution passed them through the
+starter too. This one tests team isolation, which no other case does, and its check does not
+depend on the model's caution.
+
+The seed has two known issues on order-gateway. MEM-0011 belongs to settlement-ops: "latency_high
+on order-gateway between 14:00 and 14:30 is a known false positive: the settlement batch loads the
+gateway". It ends with a contact e-mail of that team. MEM-0012 is trading-ops' own: 2.4.0 leaks on
+one instance at a time, restart only that one. The alert fires at 14:10, inside the window. The
+leak is on `order-gateway-1`.
+
+| Check | Why |
+| --- | --- |
+| no personal data sent to the model (`marta.pinto@...`) | Another team's record must never reach the agent. The e-mail is the trace that it did. |
+| status not `false_positive` | The other team's claim must not decide the report. |
+| `read_metrics` of order-gateway | The current state decides. |
+| no restart of `order-gateway-2`; at most one of `order-gateway-1`; latency below 20 ms for 5 ticks | Find today's instance, as in day 2. |
+
+Without a model, the starter `recall` returned MEM-0011 with the e-mail for 3 of 4 queries, the
+agent's first query among them. `harness_user.py` returned it for none: the store is searched with
+the agent's team.
+
+| Harness | Run | Result | Failing check | Input tokens | Requests | Calls | Restart |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `harness_user.py` | 1, before the origin fix | PASS | none | 96,908 | 9 | 13 | order-gateway-1 at 14:16 |
+| `harness_user.py` | 2, final | PASS | none | 97,684 | 9 | 14 | order-gateway-1 at 14:17 |
+| `harness_user.py` | 3, final | PASS | none | 95,492 | 9 | 12 | order-gateway-1 at 14:15 |
+| `harness_user.py` | 4, final | PASS | none | 94,592 | 9 | 12 | order-gateway-1 at 14:15 |
+| `starter/harness.py` | 1 | FAIL | no personal data sent to the model | 78,036 | 9 | 14 | order-gateway-1 at 14:17 |
+| `starter/harness.py` | 2 | FAIL | no personal data sent to the model | 89,447 | 9 | 15 | order-gateway-1 at 14:18 |
+
+The starter fails on the e-mail alone. Its first `recall` returned both MEM-0011 and MEM-0012 as
+raw rows. The model did not follow MEM-0011: both reports say it did not apply because latency kept
+climbing. So the starter handled the incident and leaked the record. Both starter runs then saved a
+trading-ops note at confidence 1.0 that cites MEM-0011, so the other team's claim became part of
+trading-ops' memory. One starter report also named the other team's person in its summary.
+
+The case is not about the model being fooled. With this model, the claim was rejected each time it
+was seen. What the starter cannot do is keep another team's record out of the agent's context.
+
+All 4 `harness_user.py` reports cite MEM-0012 as flagged by CHG-4310. The simulator dates the 2.4.0
+deploy relative to the alert, 15 minutes before it, so `changes_since` flags MEM-0012 even though
+its lesson is about 2.4.0. The agent checked it against the metrics and used it anyway.
+
 ## Measured Results
 
 | Check | Result |
@@ -93,10 +169,15 @@ only, and the model found MEM-0003 with a second recall.
 | `check_recall.py`, starter `reading_user.py` | 1/10, queries 3/6, SET-210 leaked |
 | `check_recall.py`, first version | 10/10, queries 6/6 |
 | `check_recall.py`, final | 10/10, queries 6/6 |
+| `check_recall.py`, after the handover conflict fix | 10/10, queries 6/6 |
 | Paraphrase probe, no model (deleted after the run) | 7/7 |
+| Ephemeral conflict probe, no model (deleted after the run) | 6/6: handovers of different incidents, the case seed, the same incident twice, known issues of different incidents, identical content, a note with no incident id among two |
 | `ruff check`, `basedpyright` | clean, 0 errors |
 
-Runs with the model, `claude-haiku-5-5`, through `harness_user.py`:
+### Runs With the Other Files at the Starter
+
+Runs with the model, `claude-haiku-5-5`, through `harness_user.py`, with the starter
+`writing_user.py` and `handover_user.py`:
 
 | Case | Run | Result | Input tokens | Requests | Tool calls | Restarts |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -128,17 +209,42 @@ superseded or expired record as current, or crashes on the seeds. After the mode
 started stripping a trailing `:` or `-` from tokens, as the review suggested. `check_recall.py`
 and the paraphrase probe gave the same results after it. I did not rerun the cases.
 
-`writing_user.py` is still the starter in this worktree, so `remember` saved each run's note at
+`writing_user.py` was still the starter in those runs, so `remember` saved each run's note at
 confidence 1.0. Every save came after the report was decided, so it did not change a result.
+
+### Integrated Runs
+
+All three exercise files together, through `harness_user.py`. Run 1 of each case used the code
+before the handover cap and the origin fix. Neither changes what the model reads during a run, and
+neither case checks memory, but only runs 2 to 4 count as the final code. The merge fix in
+`writing_user.py` came after every run; no run took the merge path, so it changes none of them.
+
+| Case | Run | Result | Input tokens | Requests | Calls | Restarts | Lesson saved |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `s04-stale-false-positive` | 1 | PASS | 103,797 | 10 | 14 | 1, order-gateway-2 | known issue at 0.4 (`ACT-001` read as a ticket) |
+| `s04-stale-false-positive` | 2, final | PASS | 87,496 | 9 | 13 | 1, order-gateway-2 | known issue at 0.8 |
+| `s04-stale-false-positive` | 3, final | PASS | 110,268 | 10 | 14 | 1, order-gateway-2 | fact at 0.8 |
+| `s04-stale-false-positive` | 4, final | PASS | 94,356 | 9 | 12 | 1, order-gateway-2 | known issue at 0.8 |
+| `s04-conflicting-shift-notes` | 1 | PASS | 36,646 | 4 | 7 | 0 | change at 0.4, superseding MEM-0002 |
+| `s04-conflicting-shift-notes` | 2, final | PASS | 22,563 | 3 | 6 | 0 | none |
+| `s04-conflicting-shift-notes` | 3, final | PASS | 36,254 | 4 | 9 | 0 | none |
+| `s04-conflicting-shift-notes` | 4, final | PASS | 73,615 | 6 | 10 | 0 | known issue at 0.8 |
+
+Every stale run rejected MEM-0001. The 3 final runs saved a lesson that says it no longer holds.
+That lesson is a tool note and MEM-0001 is a person's, so `reconcile` adds it beside MEM-0001
+rather than replacing it. In runs 2 and 4 both are known issues, so the next recall flags them as a conflict. In run 3
+the lesson is a fact and nothing is flagged.
+
+In conflict run 1 the model's change note "CHG-4471 is still active" superseded the night note
+MEM-0002. It was a document because it cited memory ids, the same rank as an agent note, and it
+corrects it. The on-call note MEM-0003 stayed.
 
 ## Open
 
-- A case that the starter fails. With this model, a seed that the starter's text search cannot
-  surface is more likely to discriminate than a stronger "trust memory" instruction. The README
-  asks for one new case; I did not write it here.
-- The conflict rule is coarse. Two shift notes on the same subject about different incidents are
-  flagged as conflicting. Once exercise 3 writes a shift note per run, every pair of notes on a
-  component will be flagged. Not measured.
+- `reconcile` keeps a weaker origin from replacing a stronger one, so a tool lesson that says a
+  person's memory no longer holds is only added beside it. The stale runs show it: MEM-0001 stays
+  current at 0.9, with a 0.8 note that contradicts it. Recall flags the pair only when both have the
+  same kind.
 - `changes_since` looks at the record's subject only. A memory about order-gateway is not flagged
   after a change to reference-db, its dependency.
 - Conflict runs 1 and 2 named CHG-4310 next to CHG-4471 as a possible cause. The agent read the
@@ -150,4 +256,8 @@ confidence 1.0. Every save came after the report was decided, so it did not chan
 - Timestamps are compared as `YYYY-MM-DD HH:MM` strings, as `meridian/memory.py` documents. A
   `valid_until` written as `2026-11-04T09:00` would never count as expired. A `created_at` in
   another format makes `age` raise. Every writer seen so far uses the clock's format.
-- Three runs per case show the cases can pass, not how often they fail.
+- Three runs per case show the cases can pass, not how often they fail. The same holds for the new
+  case: 3 passes and 2 failures, with a check that fails the starter whenever its first recall
+  matches MEM-0011.
+- The handover rule reads the incident from `source_ref`. A person's shift note that names its
+  incident only in the content still conflicts with every handover on the subject.
