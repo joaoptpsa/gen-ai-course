@@ -33,7 +33,7 @@ The check scripts also use two data files in `memory/`: `updates.yaml` (8 new no
 
 ## The commands
 
-Run them from the repository root, after `uv sync` and with `OPENAI_API_KEY` in `.env`.
+Run them from the repository root, after `uv sync` and with `ANTHROPIC_API_KEY` in `.env`.
 
 ```bash
 uv run python sessions/course-02-agentic-ai/04-memory/starter/check_writing.py --harness sessions/course-02-agentic-ai/04-memory/starter/harness.py
