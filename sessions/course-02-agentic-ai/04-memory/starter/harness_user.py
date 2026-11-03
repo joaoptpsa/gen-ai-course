@@ -75,8 +75,18 @@ def read_logs(ctx: RunContext[IncidentDeps], component: str, contains: str | Non
 
 
 def recent_changes(ctx: RunContext[IncidentDeps], component: str | None = None) -> dict[str, Any]:
-    """Recent deployments and configuration changes, and whether each one is still active."""
-    return ctx.deps.tools.recent_changes(component)
+    """Recent deployments and configuration changes, and whether each one is still active.
+
+    `as_of` is the date and time of this answer; `minutes_ago` is how long before it each change happened.
+    """
+    sim = ctx.deps.sim
+    as_of_tick = sim.state.tick
+    result = ctx.deps.tools.recent_changes(component)
+    if "changes" not in result:
+        return result
+    # Metrics and memories show times of day, so the age tells a deploy from yesterday apart from one a minute ago.
+    changes = [{**change, "minutes_ago": as_of_tick - change["at_tick"]} for change in result["changes"]]
+    return {**result, "as_of": sim.clock.timestamp(as_of_tick), "changes": changes}
 
 
 def search_tickets(ctx: RunContext[IncidentDeps], text: str) -> dict[str, Any]:
