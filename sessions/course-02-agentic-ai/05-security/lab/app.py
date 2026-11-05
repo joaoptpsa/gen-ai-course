@@ -22,8 +22,8 @@ def get_model():
     if model is not None:
         return model
     model = default_model()  # Loads the repository's .env.
-    if not os.getenv("OPENAI_API_KEY"):
-        raise ValueError("Add OPENAI_API_KEY to the repository's .env file, then run the example again.")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise ValueError("Add ANTHROPIC_API_KEY to the repository's .env file, then run the example again.")
     return model
 
 
