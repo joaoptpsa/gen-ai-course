@@ -30,7 +30,7 @@ gen-ai-course/
 - [`sessions/course-02-agentic-ai/02-context-tools-skills/`](sessions/course-02-agentic-ai/02-context-tools-skills/) — context selection, tool interfaces, runbooks as procedures and idempotent actions.
 - [`sessions/course-02-agentic-ai/03-mcp-integration/`](sessions/course-02-agentic-ai/03-mcp-integration/) — MCP servers for tickets, monitoring and deployments: catalog selection, correlation of sources, governance and scopes.
 - [`sessions/course-02-agentic-ai/04-memory/`](sessions/course-02-agentic-ai/04-memory/) — memory between runs as data: origin, confidence, validity, conflicts, deletion, isolation and handover.
-- [`sessions/course-02-agentic-ai/05-security/`](sessions/course-02-agentic-ai/05-security/) — threat model, PII, authorization, approvals, the trading-session freeze and attack/defence cases.
+- [`sessions/course-02-agentic-ai/05-security/`](sessions/course-02-agentic-ai/05-security/) — five guided security exercises: permissions, misleading logs, a permitted restart, personal-data protection and guardrail prompt testing.
 - [`projects/course-02-agentic-ai/`](projects/course-02-agentic-ai/) — the evolving Course 2 project.
 
 ## Getting started
@@ -44,16 +44,16 @@ Python already installed on the computer; if none is available, uv can download
 one automatically with its default configuration.
 
 ```text
-uv sync
+uv sync --locked
 ```
 
-Create a local `.env` from `.env.example`, then add your personal Anthropic API
-key (`ANTHROPIC_API_KEY`). Do not commit that file.
+Create a local `.env` from `.env.example`, then add your personal API key. Do
+not commit that file.
 
 Run an exercise from the repository root with `uv run`, for example:
 
 ```text
-uv run python -m meridian.run --harness sessions/course-02-agentic-ai/01-agent-harness/starter/harness.py --scenario sessions/course-02-agentic-ai/01-agent-harness/cases/s01-gateway-latency.yaml
+uv run python sessions/course-01-ai-fundamentals/01-llm-apis/starter/01_first_call.py
 ```
 
 Course 2 uses the `meridian` simulator, installed by `uv sync`. Its checks run
