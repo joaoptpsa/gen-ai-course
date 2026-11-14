@@ -25,6 +25,8 @@ class CaseInfo:
     incident_summary: str
     seed: int
     session: str
+    # Scenario file modification time, so callers can tell when a cached simulation is stale.
+    modified: float
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -36,6 +38,7 @@ class CaseInfo:
             "incident_summary": self.incident_summary,
             "seed": self.seed,
             "session": self.session,
+            "modified": self.modified,
         }
 
 
@@ -76,6 +79,7 @@ def _read_case(path: Path, checks_dir: Path) -> CaseInfo:
         incident_summary=str(incident.get("summary", "")),
         seed=int(data.get("seed", 1)),
         session=_session_of(case_id),
+        modified=path.stat().st_mtime,
     )
 
 

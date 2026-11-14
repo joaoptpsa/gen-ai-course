@@ -21,7 +21,8 @@ LATENCY_DEGRADED_MS = 300.0
 
 
 @st.cache_data(show_spinner="Simulating…")
-def explore_cached(case_id: str, ticks: int) -> dict[str, Any]:
+def explore_cached(case_id: str, ticks: int, modified: float) -> dict[str, Any]:
+    """`modified` is only part of the cache key: an edited case file is simulated again."""
     return commands.explore(case_id, ticks)
 
 
@@ -142,7 +143,7 @@ def main() -> None:
     )
     st.info(by_id[case_id]["incident_summary"])
 
-    result = common.call(explore_cached, case_id, ticks)
+    result = common.call(explore_cached, case_id, ticks, by_id[case_id]["modified"])
     if result is None:
         return
     frames = result["frames"]

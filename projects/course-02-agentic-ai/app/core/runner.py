@@ -190,7 +190,7 @@ def _error_record(
     case_path: Path,
     model: Any,
     approver: dict[str, Any] | None,
-    failure: Exception,
+    failure: BaseException,
     repo_root: Path,
 ) -> RunRecord:
     commit, dirty = git_state(repo_root)
@@ -250,7 +250,9 @@ def run_matrix(
                 checks_dir=checks_dir,
                 repo_root=repo_root,
             )
-        except Exception as failure:  # noqa: BLE001 a failed run becomes a visible error record
+        # meridian raises SystemExit for bad input (unknown role, harness without build_agent);
+        # one such run must not discard the others, which may already have cost money.
+        except (Exception, SystemExit) as failure:  # noqa: BLE001 a failed run becomes a visible error record
             return _error_record(
                 name, harness, case, model, approver, failure, repo_root
             )

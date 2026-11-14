@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from app.paths import CASES_DIR, CHECKS_DIR
+from meridian.agent_runtime import load_identities
 from meridian.scenarios import Scenario
 from meridian.simulator import Simulator
 
@@ -152,6 +153,16 @@ def _structure_errors(data: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _actor_errors(data: dict[str, Any]) -> list[str]:
+    """The runtime stops on an unknown actor role, so catch it before the case is written."""
+    actor = data.get("actor") or {}
+    role = actor.get("role", "first-line") if isinstance(actor, dict) else None
+    roles = load_identities()
+    if role in roles:
+        return []
+    return [f"actor.role {role!r} is unknown; use one of {', '.join(roles)}"]
+
+
 def _simulation_errors(data: dict[str, Any]) -> list[str]:
     fields = dict(data)
     fields["scenario_id"] = fields.pop("id")
@@ -169,7 +180,7 @@ def validate_scenario_text(text: str) -> list[str]:
     errors = _structure_errors(data) + _unknown_keys(data, SCENARIO_KEYS, "scenario")
     if errors:
         return errors
-    return _simulation_errors(data)
+    return _actor_errors(data) or _simulation_errors(data)
 
 
 def validate_check_text(text: str, scenario_id: str) -> list[str]:
@@ -184,6 +195,51 @@ def validate_check_text(text: str, scenario_id: str) -> list[str]:
             f"check scenario {data['scenario']!r} does not match scenario id {scenario_id!r}"
         )
     return errors
+
+
+COMMENT = re.compile(r"(^|\s)#")
+
+
+def dropped_paths(original: Any, edited: Any, path: str = "") -> list[str]:
+    """Keys and list items present in `original` but missing from `edited`, as dotted paths."""
+    if isinstance(original, dict):
+        if not isinstance(edited, dict):
+            return [path or "<root>"]
+        return [
+            dropped
+            for key, value in original.items()
+            for dropped in (
+                dropped_paths(value, edited[key], f"{path}.{key}" if path else str(key))
+                if key in edited
+                else [f"{path}.{key}" if path else str(key)]
+            )
+        ]
+    if isinstance(original, list):
+        if not isinstance(edited, list):
+            return [path]
+        missing = [f"{path}[{index}]" for index in range(len(edited), len(original))]
+        nested = [
+            dropped
+            for index, (before, after) in enumerate(zip(original, edited))
+            for dropped in dropped_paths(before, after, f"{path}[{index}]")
+        ]
+        return nested + missing
+    return []
+
+
+def has_comments(text: str) -> bool:
+    """Whether YAML text holds comments, which a load-and-dump round trip drops."""
+    return any(COMMENT.search(line) for line in text.splitlines())
+
+
+def round_trip_loss(original_text: str, rebuilt_text: str) -> dict[str, Any]:
+    """What rewriting `original_text` as `rebuilt_text` would lose."""
+    original = yaml.safe_load(original_text) or {}
+    rebuilt = yaml.safe_load(rebuilt_text) or {}
+    return {
+        "dropped": dropped_paths(original, rebuilt),
+        "comments": has_comments(original_text),
+    }
 
 
 def _dump(data: dict[str, Any], first_key: str) -> str:

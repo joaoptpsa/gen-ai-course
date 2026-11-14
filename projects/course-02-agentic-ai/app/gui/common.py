@@ -78,11 +78,9 @@ def approver_picker(key: str) -> str | None:
     return f"roles:{roles}"
 
 
-@st.cache_data(show_spinner=False)
 def cases() -> list[dict[str, Any]]:
     return commands.cases_list()
 
 
-@st.cache_data(show_spinner=False)
 def harnesses() -> list[dict[str, Any]]:
     return commands.harnesses_list()

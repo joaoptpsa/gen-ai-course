@@ -81,6 +81,27 @@ def cases_write(
     )
 
 
+def cases_round_trip_loss(
+    original_scenario: str,
+    original_check: str | None,
+    rebuilt_scenario: str,
+    rebuilt_check: str,
+) -> dict[str, Any]:
+    """What rewriting a case from a form would lose: dropped keys and comments, per file.
+
+    GUI-only: the CLI writes files as given, so it has no form to lose anything.
+    """
+    check = (
+        authoring.round_trip_loss(original_check, rebuilt_check)
+        if original_check
+        else {"dropped": [], "comments": False}
+    )
+    return {
+        "scenario": authoring.round_trip_loss(original_scenario, rebuilt_scenario),
+        "check": check,
+    }
+
+
 def authoring_schema() -> dict[str, Any]:
     """What a case editor needs to build its forms."""
     return {

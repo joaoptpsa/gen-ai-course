@@ -72,6 +72,10 @@ def start_from(scenario_text: str | None, check_text: str | None) -> None:
     st.session_state["author-faults"] = list(scenario.get("faults") or [])
     for key in ("yaml-scenario", "yaml-check"):
         st.session_state.pop(key, None)
+    # The files as loaded, to tell whether the form can rewrite them without losing anything.
+    st.session_state["author-loaded"] = (
+        {"scenario": scenario_text, "check": check_text} if scenario_text else None
+    )
     if scenario_text:
         st.session_state["yaml-scenario"] = scenario_text
         st.session_state["yaml-check"] = check_text or ""
@@ -659,14 +663,42 @@ def write_unless_exists(
 
 
 def show_written(written: dict[str, Any]) -> None:
-    common.cases.clear()
     st.success(f"Wrote `{written['scenario_path']}` and `{written['check_path']}`")
     st.page_link(
         "pages/1_Scenario_explorer.py", label="Preview in the scenario explorer"
     )
 
 
-def render_actions(scenario_text: str, check_text: str, prefix: str) -> None:
+def form_loss(scenario_text: str, check_text: str) -> list[str]:
+    """What the form would lose rewriting the loaded case, measured before any edit."""
+    loaded = st.session_state.get("author-loaded")
+    if not loaded:
+        return []
+    key = f"author-loss-{generation()}"
+    if key not in st.session_state:
+        loss = common.call(
+            commands.cases_round_trip_loss,
+            loaded["scenario"],
+            loaded["check"],
+            scenario_text,
+            check_text,
+        )
+        st.session_state[key] = describe_loss(loss) if loss is not None else []
+    return st.session_state[key]
+
+
+def describe_loss(loss: dict[str, Any]) -> list[str]:
+    lines = []
+    for name in ("scenario", "check"):
+        lines += [f"{name}: {path}" for path in loss[name]["dropped"]]
+        if loss[name]["comments"]:
+            lines.append(f"{name}: comments")
+    return lines
+
+
+def render_actions(
+    scenario_text: str, check_text: str, prefix: str, loss: list[str] | None = None
+) -> None:
     case_id = case_id_of(scenario_text) or "<id>"
     common.cli_hint(
         f"cases validate cases/{case_id}.yaml --check checks/{case_id}.yaml"
@@ -684,7 +716,18 @@ def render_actions(scenario_text: str, check_text: str, prefix: str) -> None:
         result = common.call(commands.cases_validate, scenario_text, check_text)
         if result is not None:
             show_validation(result)
-    if right.button("Write", key=f"{prefix}-write", type="primary"):
+    loaded_id = case_id_of(
+        (st.session_state.get("author-loaded") or {}).get("scenario") or ""
+    )
+    blocked = bool(loss) and case_id == loaded_id
+    if loss:
+        st.warning(
+            "The form cannot represent everything in the loaded case and would drop: "
+            + ", ".join(loss)
+            + ". Use the YAML tab to edit this case"
+            + (" (writing over it from the form is disabled)." if blocked else ".")
+        )
+    if right.button("Write", key=f"{prefix}-write", type="primary", disabled=blocked):
         written = common.call(write_unless_exists, scenario_text, check_text, overwrite)
         if written is not None:
             show_written(written)
@@ -707,7 +750,9 @@ def render_form_tab(schema: dict[str, Any]) -> tuple[str, str]:
     left.code(scenario_text, language="yaml")
     right.markdown("**Check YAML**")
     right.code(check_text, language="yaml")
-    render_actions(scenario_text, check_text, "form")
+    render_actions(
+        scenario_text, check_text, "form", form_loss(scenario_text, check_text)
+    )
     return scenario_text, check_text
 
 
