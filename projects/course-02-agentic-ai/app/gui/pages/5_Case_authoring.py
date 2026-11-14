@@ -11,6 +11,14 @@ import yaml
 
 from app import commands
 from app.gui import common
+from app.gui.authoring_session import AuthoringSession, AuthoringState, load_text
+
+SESSION_KEY = "author-session"
+STATE_NOTES: dict[AuthoringState, str] = {
+    "new": "Editing a new case.",
+    "loaded": "Editing `{case_id}`, loaded from its files.",
+    "loaded_lossy": "Editing `{case_id}`, loaded from its files. The form would drop parts of it: edit it in the YAML tab.",
+}
 
 COMPONENTS = [
     "order-gateway",
@@ -33,13 +41,6 @@ CHECK_FORM_KEYS = {
     "scenario", "report", "required_reads", "recovery", "forbidden_actions", "max_effects",
     "min_effects", "forbidden_tool_calls", "budget",
 }  # fmt: skip
-BLANK_SCENARIO: dict[str, Any] = {
-    "seed": 1,
-    "start_time": "10:00",
-    "warmup_ticks": 10,
-    "ticks_per_action": 1,
-    "background_log_lines": 3,
-}
 
 
 @dataclass(frozen=True)
@@ -49,46 +50,45 @@ class Column:
     options: tuple[str, ...] = ()
 
 
-# Source of the form: the parsed files of the loaded case, or a blank case ---------------
+# The authoring session: the loaded case, or a blank one -------------------------------
 
 
 def dump_yaml(data: dict[str, Any]) -> str:
     return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
 
 
-def load_text(text: str | None) -> dict[str, Any]:
-    parsed = yaml.safe_load(text) if text else None
-    return parsed if isinstance(parsed, dict) else {}
-
-
 def start_from(scenario_text: str | None, check_text: str | None) -> None:
-    """Make the form start from these files and bump the widget generation so widgets reset."""
-    scenario = load_text(scenario_text) if scenario_text else dict(BLANK_SCENARIO)
-    st.session_state["author-source"] = {
-        "scenario": scenario,
-        "check": load_text(check_text),
-    }
-    st.session_state["author-gen"] = st.session_state.get("author-gen", 0) + 1
-    st.session_state["author-faults"] = list(scenario.get("faults") or [])
+    """Start a session from these files, or a blank one; the YAML tab follows."""
+    previous: AuthoringSession | None = st.session_state.get(SESSION_KEY)
+    generation = previous.generation + 1 if previous else 1
+    started = (
+        AuthoringSession.from_files(generation, scenario_text, check_text)
+        if scenario_text
+        else AuthoringSession.blank(generation)
+    )
+    st.session_state[SESSION_KEY] = started
     for key in ("yaml-scenario", "yaml-check"):
         st.session_state.pop(key, None)
-    # The files as loaded, to tell whether the form can rewrite them without losing anything.
-    st.session_state["author-loaded"] = (
-        {"scenario": scenario_text, "check": check_text} if scenario_text else None
-    )
     if scenario_text:
         st.session_state["yaml-scenario"] = scenario_text
         st.session_state["yaml-check"] = check_text or ""
 
 
-def source() -> dict[str, dict[str, Any]]:
-    if "author-source" not in st.session_state:
+def session() -> AuthoringSession:
+    if SESSION_KEY not in st.session_state:
         start_from(None, None)
-    return st.session_state["author-source"]
+    return st.session_state[SESSION_KEY]
 
 
 def generation() -> int:
-    return st.session_state["author-gen"]
+    return session().generation
+
+
+def show_state(slot: Any) -> None:
+    """Say what is being edited; called once the form has measured what it would lose."""
+    current = session()
+    note = STATE_NOTES[current.state].format(case_id=current.loaded_id)
+    slot.caption(note)
 
 
 def key_of(name: str) -> str:
@@ -340,7 +340,7 @@ def fault_from_widgets(
 
 
 def faults_list() -> list[dict[str, Any]]:
-    return st.session_state["author-faults"]
+    return session().faults
 
 
 def render_fault_rows() -> None:
@@ -363,11 +363,11 @@ def render_fault_adder(schema: dict[str, Any]) -> None:
         )
         if fault_type is None:
             return
-        suffix = f"{generation()}-{st.session_state.get('fault-adds', 0)}"
+        suffix = f"{generation()}-{session().fault_adds}"
         fault = fault_from_widgets(fault_type, fault_fields[fault_type], suffix)
         if st.button("Add fault", key=key_of("fault-add")):
             faults_list().append(fault)
-            st.session_state["fault-adds"] = st.session_state.get("fault-adds", 0) + 1
+            session().fault_adds += 1
             st.rerun()
 
 
@@ -504,7 +504,7 @@ def scenario_passthrough(scenario: dict[str, Any]) -> dict[str, Any]:
 
 
 def scenario_form(schema: dict[str, Any]) -> dict[str, Any]:
-    scenario = source()["scenario"]
+    scenario = session().scenario
     sections = [
         scenario_metadata(scenario),
         scenario_incident(scenario),
@@ -615,7 +615,7 @@ def check_budget(check: dict[str, Any]) -> dict[str, Any]:
 
 
 def check_form(case_id: str) -> dict[str, Any]:
-    check = source()["check"]
+    check = session().check
     sections = [
         check_report(check),
         check_reads(check),
@@ -670,21 +670,20 @@ def show_written(written: dict[str, Any]) -> None:
 
 
 def form_loss(scenario_text: str, check_text: str) -> list[str]:
-    """What the form would lose rewriting the loaded case, measured before any edit."""
-    loaded = st.session_state.get("author-loaded")
-    if not loaded:
+    """What the form would lose rewriting the loaded case, measured once, before any edit."""
+    current = session()
+    if current.loaded_scenario is None:
         return []
-    key = f"author-loss-{generation()}"
-    if key not in st.session_state:
+    if current.loss is None:
         loss = common.call(
             commands.cases_round_trip_loss,
-            loaded["scenario"],
-            loaded["check"],
+            current.loaded_scenario,
+            current.loaded_check,
             scenario_text,
             check_text,
         )
-        st.session_state[key] = describe_loss(loss) if loss is not None else []
-    return st.session_state[key]
+        current.loss = describe_loss(loss) if loss is not None else []
+    return current.loss
 
 
 def describe_loss(loss: dict[str, Any]) -> list[str]:
@@ -716,10 +715,7 @@ def render_actions(
         result = common.call(commands.cases_validate, scenario_text, check_text)
         if result is not None:
             show_validation(result)
-    loaded_id = case_id_of(
-        (st.session_state.get("author-loaded") or {}).get("scenario") or ""
-    )
-    blocked = bool(loss) and case_id == loaded_id
+    blocked = bool(loss) and case_id == session().loaded_id
     if loss:
         st.warning(
             "The form cannot represent everything in the loaded case and would drop: "
@@ -779,9 +775,11 @@ common.page(
 )
 authoring_schema = common.call(commands.authoring_schema)
 render_start()
+state_slot = st.empty()
 if authoring_schema is not None:
     form_tab, yaml_tab = st.tabs(["Form", "YAML"])
     with form_tab:
         generated_scenario, generated_check = render_form_tab(authoring_schema)
     with yaml_tab:
         render_yaml_tab(generated_scenario, generated_check)
+    show_state(state_slot)
