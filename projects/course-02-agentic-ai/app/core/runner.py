@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import threading
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -26,6 +27,11 @@ from meridian.agent_runtime import (
 from meridian.evaluate import report_as_dict
 
 APPROVER_FORMS = '"approve_all", "deny_all" or "roles:<role>,<role>"'
+
+# meridian registers every load of a harness file under one module name, and pydantic resolves a
+# model's annotations through that name. Two threads loading at once leave one of them with a
+# report model that is "not fully defined", so loads take turns.
+_HARNESS_LOADING = threading.Lock()
 
 
 @dataclass
@@ -137,7 +143,8 @@ def run_case(
         require_api_key()
         model = default_model()
     commit, dirty = git_state(repo_root)
-    harness = load_harness(harness_path)
+    with _HARNESS_LOADING:
+        harness = load_harness(harness_path)
     options = {
         "model": model,
         "max_requests": max_requests,
