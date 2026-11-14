@@ -11,6 +11,30 @@ It grows in three milestones:
 
 Milestone briefs will live in `milestones/`.
 
+## Workbench
+
+A CLI and a Streamlit GUI to explore cases, run and compare harnesses, track the
+brief's requirements and author cases. Run from anywhere in the repository:
+
+```text
+projects/course-02-agentic-ai/bin/mrx-project --help
+projects/course-02-agentic-ai/bin/mrx-project gui
+```
+
+Every GUI action calls the same handler in `app/commands.py` as its CLI
+subcommand, and each page shows the equivalent command. Add new actions there
+first, then expose them in `app/cli.py` and the GUI. `--offline` (the "offline
+test model" in the GUI) runs harnesses without API calls.
+
+- `harnesses/`: project agent versions, each a file defining
+  `build_agent(model)`. The session harnesses are listed as read-only
+  baselines.
+- `results/`: saved result sets, committed as evidence. Tool results longer
+  than 2000 characters are truncated in saved sets.
+- `requirements.yaml`: the brief's requirements, criteria and deliverables
+  with their evidence cases. The workbench rewrites it, so it holds no
+  comments.
+
 ## Layout
 
 - `agent/`: code ported from the session starters and labs, still to be
