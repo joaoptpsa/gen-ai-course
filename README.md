@@ -73,3 +73,4 @@ development dependencies. basedpyright skips the existing type errors listed in
 - Keep API keys local; never commit `.env` files.
 - Build small, runnable examples before introducing abstractions.
 - Use the official SDK and course-specific examples rather than copying entire external lessons.
+# gen-ai-course-project
