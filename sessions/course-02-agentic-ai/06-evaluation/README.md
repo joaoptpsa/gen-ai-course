@@ -12,7 +12,7 @@
 uv run --locked streamlit run sessions/course-02-agentic-ai/06-evaluation/lab/app.py
 ```
 
-Needs `OPENAI_API_KEY` in the repository's `.env`. Two tabs, one per step. Click **What to try** (top right).
+Needs `ANTHROPIC_API_KEY` in the repository's `.env`. Two tabs, one per step. Click **What to try** (top right).
 
 | Tab | What you do |
 |---|---|

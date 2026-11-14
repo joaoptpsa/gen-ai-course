@@ -17,8 +17,8 @@ uv sync --locked
 uv run --locked streamlit run sessions/course-02-agentic-ai/05-security/lab/app.py
 ```
 
-Set `OPENAI_API_KEY` in your local `.env` before running an example. The default
-model is `gpt-4.1-mini`; `OPENAI_MODEL` can select another OpenAI model.
+Set `ANTHROPIC_API_KEY` in your local `.env` before running an example. The default
+model is `claude-haiku-5-5`; `ANTHROPIC_MODEL` can select another Anthropic model.
 
 Restarts, approvals and messages are simulated. Model requests use your API
 key. If imports fail after setup, see the

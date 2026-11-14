@@ -11,24 +11,26 @@ Typical app:
 from __future__ import annotations
 
 import os
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import streamlit as st
 
-from meridian.agent_runtime import default_model
+from meridian.agent_runtime import default_model, require_api_key
 
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 
 def get_model() -> Any:
-    """The model of every run: a test double set by the tests, or the OpenAI model of the .env file."""
+    """The model of every run: a test double set by the tests, or the model of the .env file."""
     model = st.session_state.get("model")
     if model is not None:
         return model
-    model = default_model()  # Loads the repository's .env.
-    if not os.getenv("OPENAI_API_KEY"):
-        raise ValueError("Add OPENAI_API_KEY to the repository's .env file, then run again.")
-    return model
+    try:
+        require_api_key()  # Loads the repository's .env and checks ANTHROPIC_API_KEY.
+    except SystemExit as error:
+        raise ValueError(str(error)) from error
+    return default_model()
 
 
 def page(title: str, guide: str | dict[str, str], tab_title: str | None = None) -> None:
@@ -36,7 +38,9 @@ def page(title: str, guide: str | dict[str, str], tab_title: str | None = None) 
     st.set_page_config(page_title=tab_title or title, layout="wide")
     title_column, guide_column = st.columns([5, 1], vertical_alignment="center")
     title_column.title(title)
-    if guide_column.button("What to try", icon=":material/info:", key="guide", width="stretch"):
+    if guide_column.button(
+        "What to try", icon=":material/info:", key="guide", width="stretch"
+    ):
         _guide(guide)
 
 
@@ -50,8 +54,11 @@ def _guide(guide: str | dict[str, str]) -> None:
         tab.markdown(text)
 
 
-def controls(groups: dict[str, dict[str, str]], caption: str = "They apply to every run.",
-             group_captions: dict[str, str] | None = None) -> dict[str, bool]:
+def controls(
+    groups: dict[str, dict[str, str]],
+    caption: str = "They apply to every run.",
+    group_captions: dict[str, str] | None = None,
+) -> dict[str, bool]:
     """Toggles in the sidebar, grouped. Returns {name: on}."""
     with st.sidebar:
         st.header("Controls")
@@ -66,7 +73,11 @@ def controls(groups: dict[str, dict[str, str]], caption: str = "They apply to ev
 
 
 def current_switches(groups: dict[str, dict[str, str]]) -> dict[str, bool]:
-    return {name: bool(st.session_state.get(f"switch_{name}")) for items in groups.values() for name in items}
+    return {
+        name: bool(st.session_state.get(f"switch_{name}"))
+        for items in groups.values()
+        for name in items
+    }
 
 
 def switches_label(groups: dict[str, dict[str, str]], switches: dict[str, bool]) -> str:
@@ -75,13 +86,19 @@ def switches_label(groups: dict[str, dict[str, str]], switches: dict[str, bool])
     return ", ".join(on) if on else "no controls"
 
 
-def last_two(key: str, render: Callable[[Any], None], empty: str = "Run once, change a control, run again. The last two runs stay side by side.") -> None:
+def last_two(
+    key: str,
+    render: Callable[[Any], None],
+    empty: str = "Run once, change a control, run again. The last two runs stay side by side.",
+) -> None:
     """Show the last two runs stored under st.session_state[key], side by side."""
     runs = st.session_state.get(key, [])
     if not runs:
         st.caption(empty)
         return
-    for column, (number, run) in zip(st.columns(2), list(enumerate(runs, start=1))[-2:]):
+    for column, (number, run) in zip(
+        st.columns(2), list(enumerate(runs, start=1))[-2:]
+    ):
         with column:
             st.markdown(f"**Run {number}**")
             render(run)
@@ -98,7 +115,9 @@ def timeline(events: list[dict[str, Any]], lanes: bool = True) -> None:
         return
     if not lanes:
         for event in events:
-            with st.expander(f"{event['time']} · {event.get('agent', '')} · {event['step']}"):
+            with st.expander(
+                f"{event['time']} · {event.get('agent', '')} · {event['step']}"
+            ):
                 st.write(event["detail"])
         return
     agents = list(dict.fromkeys(event["agent"] for event in events))

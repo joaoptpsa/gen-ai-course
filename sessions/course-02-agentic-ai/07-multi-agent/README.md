@@ -13,7 +13,7 @@ One incident, five agents. You watch them work live: who is busy, who talks to w
 uv run --locked streamlit run sessions/course-02-agentic-ai/07-multi-agent/lab/app.py
 ```
 
-Needs `OPENAI_API_KEY` in the repository's `.env`. Click **What to try** (top right).
+Needs `ANTHROPIC_API_KEY` in the repository's `.env`. Click **What to try** (top right).
 
 ## The two incidents
 
