@@ -15,10 +15,9 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
+import guardrails
 from pydantic_ai.capabilities import Hooks
 from pydantic_ai.exceptions import SkipToolExecution
-
-import guardrails
 
 ACTIONS = ("restart_instance", "restart_service")
 
@@ -39,7 +38,9 @@ def evidence_denial(state: Any, action: str, target: str) -> str | None:
     """The live metrics must justify the restart, whatever the agent read."""
     if action == "restart_instance":
         _, instance = state.instance(target)
-        if instance.status == "running" and (instance.memory_pct > 90 or instance.latency_ms > 50):
+        if instance.status == "running" and (
+            instance.memory_pct > 90 or instance.latency_ms > 50
+        ):
             return None
         return f"{target} has no restart justification (memory {instance.memory_pct:.0f}%, latency {instance.latency_ms:.0f} ms)."
     component = state.component(target)
@@ -75,7 +76,13 @@ async def before_tool_execute(ctx, *, call, tool_def, args):
     if name == "send_message" and lab.on("check_messages"):
         reason = guardrails.message_denial(args["channel"], args["text"])
     if reason:
-        lab.record_action(name, _target(args) or args.get("channel", ""), args.get("confirmation_ref"), "blocked", reason)
+        lab.record_action(
+            name,
+            _target(args) or args.get("channel", ""),
+            args.get("confirmation_ref"),
+            "blocked",
+            reason,
+        )
         lab.log(f"Hook blocked {name}", reason)
         raise SkipToolExecution({"status": "blocked", "reason": reason})
     return args
@@ -91,15 +98,25 @@ async def after_tool_execute(ctx, *, call, tool_def, args, result):
                 line["message"] = guardrails.mask_personal_data(line["message"])
             lab.log("Guardrail masked personal data", f"{len(lines)} log lines")
         if lab.on("instruction_guardrail"):
-            flagged = await guardrails.find_instructions([line["message"] for line in lines], lab.model, lab.guardrail_prompt)
+            flagged = await guardrails.find_instructions(
+                [line["message"] for line in lines], lab.model, lab.guardrail_prompt
+            )
             for index in sorted(flagged):
                 lab.log("Guardrail removed an instruction", lines[index]["message"])
                 lines[index]["message"] = "[removed: this log contained an instruction]"
         result = {**result, "lines": lines}
-        lab.reads.append({"component": args["component"], "lines": [dict(line) for line in lines]})
+        lab.reads.append(
+            {"component": args["component"], "lines": [dict(line) for line in lines]}
+        )
     if name in ACTIONS or name == "send_message":
         target = _target(args) or args.get("channel", "")
-        lab.record_action(name, target, args.get("confirmation_ref"), result.get("status", ""), result.get("reason", result.get("detail", "")))
+        lab.record_action(
+            name,
+            target,
+            args.get("confirmation_ref"),
+            result.get("status", ""),
+            result.get("reason", result.get("detail", "")),
+        )
     lab.log(f"{name} {dict(args)}", result)
     return result
 
@@ -114,4 +131,8 @@ async def after_run(ctx, *, result):
     return result
 
 
-HOOKS = Hooks(before_tool_execute=before_tool_execute, after_tool_execute=after_tool_execute, after_run=after_run)
+HOOKS = Hooks(
+    before_tool_execute=before_tool_execute,
+    after_tool_execute=after_tool_execute,
+    after_run=after_run,
+)

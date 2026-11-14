@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 from pydantic_ai import Agent, ModelRetry, RunContext
@@ -41,27 +42,42 @@ def read_alert(ctx: RunContext[IncidentDeps], alert_id: str) -> dict[str, Any]:
     return ctx.deps.tools.read_alert(alert_id)
 
 
-def list_alerts(ctx: RunContext[IncidentDeps], component: str | None = None, limit: int = 20) -> dict[str, Any]:
+def list_alerts(
+    ctx: RunContext[IncidentDeps], component: str | None = None, limit: int = 20
+) -> dict[str, Any]:
     """List open alerts, optionally for one component."""
     return ctx.deps.tools.list_alerts("open", component, limit)
 
 
-def read_metrics(ctx: RunContext[IncidentDeps], component: str, window_ticks: int = 5) -> dict[str, Any]:
+def read_metrics(
+    ctx: RunContext[IncidentDeps], component: str, window_ticks: int = 5
+) -> dict[str, Any]:
     """Recent metrics of a component, per instance (memory, latency, status). Cite source_ref as evidence."""
     return ctx.deps.tools.read_metrics(component, window_ticks, per_instance=True)
 
 
-def read_logs(ctx: RunContext[IncidentDeps], component: str, contains: str | None = None, limit: int = 20) -> dict[str, Any]:
+def read_logs(
+    ctx: RunContext[IncidentDeps],
+    component: str,
+    contains: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
     """Recent log lines of a component. Use contains to filter, e.g. "WARN"."""
-    return ctx.deps.tools.read_logs(component=component, contains=contains, limit=min(limit, 50))
+    return ctx.deps.tools.read_logs(
+        component=component, contains=contains, limit=min(limit, 50)
+    )
 
 
-def check_link(ctx: RunContext[IncidentDeps], source: str, target: str) -> dict[str, Any]:
+def check_link(
+    ctx: RunContext[IncidentDeps], source: str, target: str
+) -> dict[str, Any]:
     """State of the link between two components: up, degraded or down."""
     return ctx.deps.tools.check_link(source, target)
 
 
-def recent_changes(ctx: RunContext[IncidentDeps], component: str | None = None) -> dict[str, Any]:
+def recent_changes(
+    ctx: RunContext[IncidentDeps], component: str | None = None
+) -> dict[str, Any]:
     """Recent deploys and configuration changes, newest first."""
     return ctx.deps.tools.recent_changes(component)
 
@@ -76,42 +92,79 @@ def read_runbook(ctx: RunContext[IncidentDeps], name: str) -> dict[str, Any]:
     return ctx.deps.tools.read_runbook(name)
 
 
-def restart_instance(ctx: RunContext[IncidentDeps], instance_id: str, idempotency_key: str) -> dict[str, Any]:
+def restart_instance(
+    ctx: RunContext[IncidentDeps], instance_id: str, idempotency_key: str
+) -> dict[str, Any]:
     """Restart one instance, e.g. order-gateway-2. Reuse the same idempotency_key if you retry the same restart."""
     return ctx.deps.tools.restart_instance(instance_id, idempotency_key=idempotency_key)
 
 
-def action_status(ctx: RunContext[IncidentDeps], idempotency_key: str) -> dict[str, Any]:
+def action_status(
+    ctx: RunContext[IncidentDeps], idempotency_key: str
+) -> dict[str, Any]:
     """Was an action with this key applied? Use it when an action timed out."""
     return ctx.deps.tools.action_status(idempotency_key)
 
 
-def request_approval(ctx: RunContext[IncidentDeps], action: str, target: str, reason: str) -> dict[str, Any]:
+def request_approval(
+    ctx: RunContext[IncidentDeps], action: str, target: str, reason: str
+) -> dict[str, Any]:
     """Ask the on-call engineer to approve one action on one target (needed for critical components)."""
     return ctx.deps.tools.request_approval(action, target, reason, "on-call")
 
 
-def rollback_change(ctx: RunContext[IncidentDeps], change_id: str, idempotency_key: str, confirmation_ref: str | None = None) -> dict[str, Any]:
+def rollback_change(
+    ctx: RunContext[IncidentDeps],
+    change_id: str,
+    idempotency_key: str,
+    confirmation_ref: str | None = None,
+) -> dict[str, Any]:
     """Undo a deploy or configuration change, e.g. CHG-4490."""
-    return ctx.deps.tools.rollback_change(change_id, idempotency_key=idempotency_key, confirmation_ref=confirmation_ref)
+    return ctx.deps.tools.rollback_change(
+        change_id, idempotency_key=idempotency_key, confirmation_ref=confirmation_ref
+    )
 
 
-TOOLS = (read_alert, list_alerts, read_metrics, read_logs, check_link, recent_changes, list_runbooks, read_runbook,
-         restart_instance, action_status, request_approval, rollback_change)
+TOOLS = (
+    read_alert,
+    list_alerts,
+    read_metrics,
+    read_logs,
+    check_link,
+    recent_changes,
+    list_runbooks,
+    read_runbook,
+    restart_instance,
+    action_status,
+    request_approval,
+    rollback_change,
+)
 
 
-def check_recovery(ctx: RunContext[IncidentDeps], report: IncidentReport) -> IncidentReport:
+def check_recovery(
+    ctx: RunContext[IncidentDeps], report: IncidentReport
+) -> IncidentReport:
     """Output validator: "resolved" only if the last 3 readings of the alerted component are healthy."""
     if report.status != "resolved":
         return report
-    component = ctx.deps.tools.read_alert(ctx.deps.sim.incident_brief()["alert_id"])["component"]
+    component = ctx.deps.tools.read_alert(ctx.deps.sim.incident_brief()["alert_id"])[
+        "component"
+    ]
     metrics = ctx.deps.tools.read_metrics(component, 3)
     if "error" in metrics:
-        raise ModelRetry(f"Recovery cannot be confirmed: {metrics['error']}. Do not report resolved.")
-    bad = [r for r in metrics["readings"] if r["latency_ms"] >= 20 or r["error_rate"] >= 0.01]
+        raise ModelRetry(
+            f"Recovery cannot be confirmed: {metrics['error']}. Do not report resolved."
+        )
+    bad = [
+        r
+        for r in metrics["readings"]
+        if r["latency_ms"] >= 20 or r["error_rate"] >= 0.01
+    ]
     if bad:
-        raise ModelRetry(f"Not recovered: at {bad[-1]['time']} latency_ms={bad[-1]['latency_ms']}, error_rate={bad[-1]['error_rate']}. "
-                         "Do not report resolved yet.")
+        raise ModelRetry(
+            f"Not recovered: at {bad[-1]['time']} latency_ms={bad[-1]['latency_ms']}, error_rate={bad[-1]['error_rate']}. "
+            "Do not report resolved yet."
+        )
     return report
 
 
@@ -143,11 +196,23 @@ class Version:
     instructions: str
     verify_recovery: bool
     description: str
-    builder: Callable[[Any, str], Agent] | None = None  # C: the students' build_agent(model, instructions)
+    builder: Callable[[Any, str], Agent] | None = (
+        None  # C: the students' build_agent(model, instructions)
+    )
 
 
-A = Version("A (current)", A_INSTRUCTIONS, True, "Follows the runbooks, lists every alert, checks recovery in code.")
-B = Version("B (proposed)", B_INSTRUCTIONS, False, "Faster and cheaper: acts on the first plausible cause, no recovery check.")
+A = Version(
+    "A (current)",
+    A_INSTRUCTIONS,
+    True,
+    "Follows the runbooks, lists every alert, checks recovery in code.",
+)
+B = Version(
+    "B (proposed)",
+    B_INSTRUCTIONS,
+    False,
+    "Faster and cheaper: acts on the first plausible cause, no recovery check.",
+)
 
 
 MINE_ERROR: str | None = None
@@ -161,6 +226,7 @@ def mine() -> Version | None:
     global MINE_ERROR
     MINE_ERROR = None
     from pydantic_ai.models.test import TestModel
+
     try:
         spec = importlib.util.spec_from_file_location("s06_my_agent", path)
         module = importlib.util.module_from_spec(spec)
@@ -169,10 +235,16 @@ def mine() -> Version | None:
         module.build_agent(TestModel(), module.INSTRUCTIONS)
     except NotImplementedError:
         return None
-    except Exception as error:  # Show the students' error in the app instead of crashing it.
+    except Exception as error:  # noqa: BLE001 - show the students' error in the app instead of crashing it.
         MINE_ERROR = f"{type(error).__name__}: {error}"
         return None
-    return Version("C (yours)", module.INSTRUCTIONS, False, getattr(module, "DESCRIPTION", "starter/my_agent.py"), module.build_agent)
+    return Version(
+        "C (yours)",
+        module.INSTRUCTIONS,
+        False,
+        getattr(module, "DESCRIPTION", "starter/my_agent.py"),
+        module.build_agent,
+    )
 
 
 def versions() -> dict[str, Version]:
@@ -189,7 +261,13 @@ def harness(version: Version) -> SimpleNamespace:
     def build_agent(model: Any) -> Agent[IncidentDeps, IncidentReport]:
         if version.builder is not None:
             return version.builder(model, version.instructions)
-        agent = Agent(model, deps_type=IncidentDeps, output_type=IncidentReport, instructions=version.instructions, retries=3)
+        agent = Agent(
+            model,
+            deps_type=IncidentDeps,
+            output_type=IncidentReport,
+            instructions=version.instructions,
+            retries=3,
+        )
         for tool in TOOLS:
             agent.tool(tool)
         if version.verify_recovery:

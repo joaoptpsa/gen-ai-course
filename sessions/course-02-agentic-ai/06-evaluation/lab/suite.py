@@ -9,14 +9,15 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
-
-from meridian.agent_runtime import IncidentRun, run_incident
+from typing import Any
 
 import agents
+
+from meridian.agent_runtime import IncidentRun, run_incident
 
 COURSE = agents.HERE.parents[1]
 CASE_DIRS = (
@@ -36,7 +37,9 @@ def cases() -> dict[str, Path]:
 
 def load_starter(name: str):
     """A students' file from starter/, loaded fresh so edits apply without restarting the app."""
-    spec = importlib.util.spec_from_file_location(f"s06_{name}", agents.STARTER / f"{name}.py")
+    spec = importlib.util.spec_from_file_location(
+        f"s06_{name}", agents.STARTER / f"{name}.py"
+    )
     module = importlib.util.module_from_spec(spec)
     sys.modules[f"s06_{name}"] = module
     spec.loader.exec_module(module)
@@ -51,6 +54,7 @@ def trajectory_checks() -> list[Callable[[IncidentRun], tuple[bool, str]]]:
 def describe(run: IncidentRun) -> tuple[str, str]:
     """What the critic sees about a run: describe_run() in starter/improver.py, or only the agent's own words."""
     import pieces
+
     return pieces.describe(run)
 
 
@@ -72,11 +76,20 @@ class RunResult:
 
     @property
     def row(self) -> dict[str, Any]:
-        return {"Version": self.version, "Case": self.case, "Pass": self.passed, "Status": self.status,
-                "Failed checks": "; ".join(self.failed) or "-", "Input tokens": self.tokens, "Requests": self.requests}
+        return {
+            "Version": self.version,
+            "Case": self.case,
+            "Pass": self.passed,
+            "Status": self.status,
+            "Failed checks": "; ".join(self.failed) or "-",
+            "Input tokens": self.tokens,
+            "Requests": self.requests,
+        }
 
 
-def _check_trajectory(run: IncidentRun, checks) -> tuple[bool, dict[str, str], list[str]]:
+def _check_trajectory(
+    run: IncidentRun, checks
+) -> tuple[bool, dict[str, str], list[str]]:
     passed, notes, failed = True, {}, []
     for check in checks:
         name = check.__name__
@@ -93,33 +106,74 @@ def _check_trajectory(run: IncidentRun, checks) -> tuple[bool, dict[str, str], l
 
 
 def run_one(version: agents.Version, case: str, path: Path, model: Any) -> RunResult:
-    run = run_incident(agents.harness(version), path, model=model, max_requests=25, use_memory=False)
-    failed = [] if run.evaluation is None else [check.name for check in run.evaluation.checks if not check.passed]
+    run = run_incident(
+        agents.harness(version), path, model=model, max_requests=25, use_memory=False
+    )
+    failed = (
+        []
+        if run.evaluation is None
+        else [check.name for check in run.evaluation.checks if not check.passed]
+    )
     report = run.report.model_dump() if run.report is not None else {}
-    ok_trajectory, notes, failed_trajectory = _check_trajectory(run, trajectory_checks())
-    actions = [f"{record.action} {record.target} -> {record.outcome}" for record in run.sim.executor.audit]
+    ok_trajectory, notes, failed_trajectory = _check_trajectory(
+        run, trajectory_checks()
+    )
+    actions = [
+        f"{record.action} {record.target} -> {record.outcome}"
+        for record in run.sim.executor.audit
+    ]
     text, origin = describe(run)
     return RunResult(
-        version=version.name, case=case,
+        version=version.name,
+        case=case,
         passed=run.error is None and not failed and ok_trajectory,
-        failed=failed + [f"trajectory: {name}" for name in failed_trajectory] + ([run.error] if run.error else []),
-        tokens=run.extra.get("input_tokens", 0), requests=run.extra.get("requests", 0),
-        status=report.get("status", "no report"), summary=report.get("summary", ""), error=run.error,
-        trajectory=notes, actions=actions, description=text, description_origin=origin,
+        failed=failed
+        + [f"trajectory: {name}" for name in failed_trajectory]
+        + ([run.error] if run.error else []),
+        tokens=run.extra.get("input_tokens", 0),
+        requests=run.extra.get("requests", 0),
+        status=report.get("status", "no report"),
+        summary=report.get("summary", ""),
+        error=run.error,
+        trajectory=notes,
+        actions=actions,
+        description=text,
+        description_origin=origin,
     )
 
 
-def run_many(jobs: list[tuple[agents.Version, str, Path]], model: Any, workers: int = 6, on_done: Callable[[int, int], None] | None = None) -> list[RunResult]:
+def run_many(
+    jobs: list[tuple[agents.Version, str, Path]],
+    model: Any,
+    workers: int = 6,
+    on_done: Callable[[int, int], None] | None = None,
+) -> list[RunResult]:
     """Run the jobs in parallel (each on its own fresh simulator)."""
     results: list[RunResult] = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(run_one, version, case, path, model) for version, case, path in jobs]
+        futures = [
+            pool.submit(run_one, version, case, path, model)
+            for version, case, path in jobs
+        ]
         for done, future in enumerate(as_completed(futures), start=1):
             try:
                 results.append(future.result())
-            except Exception as error:  # A failed request must not lose the other runs.
+            except Exception as error:  # noqa: BLE001 - a failed request must not lose the other runs.
                 version, case, _ = jobs[futures.index(future)]
-                results.append(RunResult(version.name, case, False, [f"run failed: {error}"], 0, 0, "error", "", str(error), description=f"The run failed: {error}"))
+                results.append(
+                    RunResult(
+                        version.name,
+                        case,
+                        False,
+                        [f"run failed: {error}"],
+                        0,
+                        0,
+                        "error",
+                        "",
+                        str(error),
+                        description=f"The run failed: {error}",
+                    )
+                )
             if on_done:
                 on_done(done, len(jobs))
     return results
@@ -136,12 +190,18 @@ def pass_table(results: list[RunResult]) -> list[dict[str, Any]]:
     for case in sorted({result.case for result in results}):
         row: dict[str, Any] = {"Case": case}
         for name in names:
-            runs = [result for result in results if result.case == case and result.version == name]
+            runs = [
+                result
+                for result in results
+                if result.case == case and result.version == name
+            ]
             row[name] = f"{sum(r.passed for r in runs)}/{len(runs)}" if runs else "-"
         rows.append(row)
     total: dict[str, Any] = {"Case": "TOTAL"}
     for name in names:
         runs = [result for result in results if result.version == name]
         tokens = sum(r.tokens for r in runs) // max(1, len(runs))
-        total[name] = f"{sum(r.passed for r in runs)}/{len(runs)} · {tokens:,} tokens/run"
+        total[name] = (
+            f"{sum(r.passed for r in runs)}/{len(runs)} · {tokens:,} tokens/run"
+        )
     return rows + [total]

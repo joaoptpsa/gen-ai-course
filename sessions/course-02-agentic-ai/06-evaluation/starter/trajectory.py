@@ -19,8 +19,6 @@ Hints:
 
 from __future__ import annotations
 
-import json
-
 from meridian.agent_runtime import IncidentRun
 
 ACTIONS = ("restart_instance", "rollback_change")

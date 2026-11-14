@@ -31,7 +31,7 @@ from pydantic_ai import Agent
 from meridian.agent_runtime import IncidentDeps
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lab"))
-from agents import IncidentReport  # noqa: E402
+from agents import IncidentReport
 
 DESCRIPTION = "C: describe your agent in one line."
 

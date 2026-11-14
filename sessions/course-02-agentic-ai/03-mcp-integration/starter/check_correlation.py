@@ -26,7 +26,9 @@ EVENTS = Path(__file__).resolve().parents[1] / "events" / "dev.yaml"
 
 
 def load_correlate(path: str) -> Any:
-    spec = importlib.util.spec_from_file_location("student_incident_server", Path(path).resolve())
+    spec = importlib.util.spec_from_file_location(
+        "student_incident_server", Path(path).resolve()
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.correlate
@@ -36,12 +38,20 @@ def group(events: list[dict[str, Any]], correlate: Any) -> dict[str, str]:
     incidents: dict[str, dict[str, Any]] = {}
     assigned: dict[str, str] = {}
     for event in events:
-        visible = {key: value for key, value in event.items() if key not in ("id", "incident")}
+        visible = {
+            key: value for key, value in event.items() if key not in ("id", "incident")
+        }
         visible.setdefault("component", None)
         key = correlate(visible, [dict(incident) for incident in incidents.values()])
         if key not in incidents:
             key = f"INC-{len(incidents) + 1}"
-            incidents[key] = {"key": key, "components": [], "first_seen": visible["time"], "last_seen": visible["time"], "events": []}
+            incidents[key] = {
+                "key": key,
+                "components": [],
+                "first_seen": visible["time"],
+                "last_seen": visible["time"],
+                "events": [],
+            }
         incident = incidents[key]
         incident["events"].append(visible)
         incident["last_seen"] = visible["time"]
@@ -51,10 +61,20 @@ def group(events: list[dict[str, Any]], correlate: Any) -> dict[str, str]:
     return assigned
 
 
-def score(events: list[dict[str, Any]], assigned: dict[str, str]) -> tuple[float, float, float]:
+def score(
+    events: list[dict[str, Any]], assigned: dict[str, str]
+) -> tuple[float, float, float]:
     truth = {event["id"]: event["incident"] for event in events}
-    predicted_pairs = {pair for pair in combinations(sorted(truth), 2) if assigned[pair[0]] == assigned[pair[1]]}
-    true_pairs = {pair for pair in combinations(sorted(truth), 2) if truth[pair[0]] == truth[pair[1]]}
+    predicted_pairs = {
+        pair
+        for pair in combinations(sorted(truth), 2)
+        if assigned[pair[0]] == assigned[pair[1]]
+    }
+    true_pairs = {
+        pair
+        for pair in combinations(sorted(truth), 2)
+        if truth[pair[0]] == truth[pair[1]]
+    }
     hits = len(predicted_pairs & true_pairs)
     precision = hits / len(predicted_pairs) if predicted_pairs else 0.0
     recall = hits / len(true_pairs) if true_pairs else 0.0
@@ -77,10 +97,18 @@ def main() -> None:
     for key, members in by_incident.items():
         print(f"{key}")
         for event in members:
-            mark = "" if all(other["incident"] == event["incident"] for other in members) else "   <- mixed"
-            print(f"   {event['id']} {event['time']:>4} {event['source']:<10} {str(event.get('component') or '-'):<15} {event['text'][:60]}{mark}")
+            mark = (
+                ""
+                if all(other["incident"] == event["incident"] for other in members)
+                else "   <- mixed"
+            )
+            print(
+                f"   {event['id']} {event['time']:>4} {event['source']:<10} {event.get('component') or '-'!s:<15} {event['text'][:60]}{mark}"
+            )
     precision, recall, f1 = score(events, assigned)
-    print(f"\nprecision {precision:.2f}   recall {recall:.2f}   F1 {f1:.2f}   ->  {'PASS' if f1 >= 0.9 else 'FAIL'} (target F1 >= 0.90)")
+    print(
+        f"\nprecision {precision:.2f}   recall {recall:.2f}   F1 {f1:.2f}   ->  {'PASS' if f1 >= 0.9 else 'FAIL'} (target F1 >= 0.90)"
+    )
 
 
 if __name__ == "__main__":

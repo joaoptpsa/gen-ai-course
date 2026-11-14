@@ -10,10 +10,9 @@ import importlib.util
 import sys
 from typing import Any
 
-from pydantic_ai import Agent
-
 import agents
 from models import Proposal, Review
+from pydantic_ai import Agent
 
 DEFAULT_PROPOSER = """\
 You improve the instructions of an incident agent. You receive its current instructions,
@@ -23,7 +22,9 @@ Propose ONE change. Return the change in one line, and the complete new instruct
 
 
 def _improver():
-    spec = importlib.util.spec_from_file_location("s06_improver", agents.STARTER / "improver.py")
+    spec = importlib.util.spec_from_file_location(
+        "s06_improver", agents.STARTER / "improver.py"
+    )
     module = importlib.util.module_from_spec(spec)
     sys.modules["s06_improver"] = module
     spec.loader.exec_module(module)
@@ -45,7 +46,10 @@ def describe(run: Any) -> tuple[str, str]:
     report = run.report
     if report is None:
         return f"The run ended without a report ({run.error}).", "default"
-    return f"Status reported by the agent: {report.status}\nSummary: {report.summary}", "default"
+    return (
+        f"Status reported by the agent: {report.status}\nSummary: {report.summary}",
+        "default",
+    )
 
 
 def critic_agent(model: Any, instructions: str) -> tuple[Agent, str]:
@@ -62,13 +66,25 @@ def proposer_agent(model: Any) -> tuple[Agent, str]:
     return Agent(model, output_type=Proposal, instructions=DEFAULT_PROPOSER), "default"
 
 
-def proposer_message(instructions: str, verify_recovery: bool, reviews: list[tuple[str, Review]], memory: str) -> tuple[str, str]:
-    mine, text = _yours("proposer_message", instructions, verify_recovery, reviews, memory)
+def proposer_message(
+    instructions: str,
+    verify_recovery: bool,
+    reviews: list[tuple[str, Review]],
+    memory: str,
+) -> tuple[str, str]:
+    mine, text = _yours(
+        "proposer_message", instructions, verify_recovery, reviews, memory
+    )
     if mine:
         return text, "yours"
-    lines = [f"- {case}: {review.problem}" for case, review in reviews if review.score <= 3]
-    return (f"CURRENT INSTRUCTIONS:\n{instructions}\n\nREVIEWS:\n" + ("\n".join(dict.fromkeys(lines)) or "- none")
-            + f"\n\nMEMORY:\n{memory}"), "default"
+    lines = [
+        f"- {case}: {review.problem}" for case, review in reviews if review.score <= 3
+    ]
+    return (
+        f"CURRENT INSTRUCTIONS:\n{instructions}\n\nREVIEWS:\n"
+        + ("\n".join(dict.fromkeys(lines)) or "- none")
+        + f"\n\nMEMORY:\n{memory}"
+    ), "default"
 
 
 def lesson(attempt: Any) -> tuple[str | None, str]:
@@ -78,4 +94,8 @@ def lesson(attempt: Any) -> tuple[str | None, str]:
 
 def recall(lessons: list[str]) -> tuple[str, str]:
     mine, text = _yours("recall", lessons)
-    return (text, "yours") if mine else ("(no memory: lesson() and recall() are not written yet)", "none")
+    return (
+        (text, "yours")
+        if mine
+        else ("(no memory: lesson() and recall() are not written yet)", "none")
+    )

@@ -39,24 +39,56 @@ def select_tools(incident: str, tools: dict[str, str], model: Any) -> list[str]:
     """Choose initial tools from their summaries, with a fixed core and code-enforced restrictions."""
     allowed = {name: line for name, line in tools.items() if name not in NEVER}
     core = sorted(CORE & set(allowed))
-    listing = "\n".join(f"- {name}: {line}" for name, line in allowed.items() if name not in CORE)
+    listing = "\n".join(
+        f"- {name}: {line}" for name, line in allowed.items() if name not in CORE
+    )
     try:
-        picked = Agent(
-            model,
-            output_type=Selection,
-            instructions=ROUTER_INSTRUCTIONS,
-        ).run_sync(f"{incident}\n\nTools:\n{listing}").output.tools
-    except Exception:  # A failed router falls back to the core instead of stopping the incident.
+        picked = (
+            Agent(
+                model,
+                output_type=Selection,
+                instructions=ROUTER_INSTRUCTIONS,
+            )
+            .run_sync(f"{incident}\n\nTools:\n{listing}")
+            .output.tools
+        )
+    except Exception:  # noqa: BLE001 - a failed router falls back to the core instead of stopping the incident.
         picked = []
-    extra = [name for name in dict.fromkeys(picked) if name in allowed and name not in CORE]
+    extra = [
+        name for name in dict.fromkeys(picked) if name in allowed and name not in CORE
+    ]
     return core + extra[: MAX_TOOLS - len(core)]
 
 
-STOP_WORDS = {"the", "a", "an", "of", "to", "and", "or", "for", "on", "in", "is", "are", "with", "between", "i", "need", "check", "whether", "if"}
+STOP_WORDS = {
+    "the",
+    "a",
+    "an",
+    "of",
+    "to",
+    "and",
+    "or",
+    "for",
+    "on",
+    "in",
+    "is",
+    "are",
+    "with",
+    "between",
+    "i",
+    "need",
+    "check",
+    "whether",
+    "if",
+}
 
 
 def _stems(text: str) -> set[str]:
-    return {word[:5] for word in re.findall(r"[a-z]+", text.lower()) if word not in STOP_WORDS}
+    return {
+        word[:5]
+        for word in re.findall(r"[a-z]+", text.lower())
+        if word not in STOP_WORDS
+    }
 
 
 def search_tools(ctx: RunContext[IncidentDeps], need: str) -> dict[str, Any]:
@@ -76,7 +108,10 @@ def search_tools(ctx: RunContext[IncidentDeps], need: str) -> dict[str, Any]:
     found = sorted(scored, key=lambda item: -item[0])[:3]
     ACTIVE.update(name for _, name, _ in found)
     if not found:
-        return {"added": [], "detail": "No other tool matches. Describe the need differently, or continue with the tools you have."}
+        return {
+            "added": [],
+            "detail": "No other tool matches. Describe the need differently, or continue with the tools you have.",
+        }
     return {"added": [{"name": name, "what": line} for _, name, line in found]}
 
 

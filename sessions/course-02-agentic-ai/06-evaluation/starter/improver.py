@@ -35,8 +35,7 @@ from pydantic_ai import Agent
 from meridian.agent_runtime import IncidentRun
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lab"))
-from models import Proposal, Review  # noqa: E402
-
+from models import Proposal, Review
 
 # 1 · What the critic sees ------------------------------------------------------------------
 
@@ -63,7 +62,12 @@ def build_proposer(model) -> Agent[None, Proposal]:
 # 4 · What the proposer reads -----------------------------------------------------------------
 
 
-def proposer_message(instructions: str, verify_recovery: bool, reviews: list[tuple[str, Review]], memory: str) -> str:
+def proposer_message(
+    instructions: str,
+    verify_recovery: bool,
+    reviews: list[tuple[str, Review]],
+    memory: str,
+) -> str:
     # reviews: (case name, the critic's Review) for every run of the current best version
     raise NotImplementedError
 
