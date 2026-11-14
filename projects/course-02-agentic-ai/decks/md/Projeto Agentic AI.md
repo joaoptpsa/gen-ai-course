@@ -1,8 +1,8 @@
 <!-- page 1 -->
 
-*CURSO 2 / PROJETO*
-
 # Projeto
+
+CURSO 2 / PROJETO
 
 ## Proposta comum, requisitos mínimos e avaliação
 
@@ -11,17 +11,17 @@ Luís Noronha
 
 <!-- page 2 -->
 
-*ESCOLHA DO PROJETO*
+ESCOLHA DO PROJETO
 
-# Proposta comum ou projeto próprio
+## Proposta comum ou projeto próprio
 
-## Proposta comum
+### Proposta comum
 
 Sistema de resposta a incidentes da Meridian Exchange.
 
 Simulador, fontes e casos fornecidos para concentrar o trabalho nos agentes.
 
-## Projeto próprio ou continuação
+### Projeto próprio ou continuação
 
 Outro problema ou evolução de um projeto existente.
 
@@ -31,9 +31,9 @@ A escolha do tema mantém-se em aberto. Os requisitos mínimos e os critérios d
 
 <!-- page 3 -->
 
-*PROPOSTA COMUM · CENÁRIO*
+PROPOSTA COMUM · CENÁRIO
 
-# Meridian Exchange
+## Meridian Exchange
 
 > diagram: Gateway de ordens → Motor de negociação; Dados de mercado → Motor de negociação
 > Motor de negociação → Liquidação → Base de dados de referência
@@ -51,12 +51,12 @@ Bolsa fictícia num simulador em Python. Alertas, tickets e reclamações podem 
 
 <!-- page 4 -->
 
-*PROGRESSÃO*
+PROGRESSÃO
 
-# Um projeto que ganha responsabilidades
+## Um projeto que ganha responsabilidades
 
 | MARCO | CAPACIDADES ACRESCENTADAS | EVIDÊNCIA |
-|---|---|---|
+| --- | --- | --- |
 | First-Line Incident Agent<br>sessões 1–3 | Investigar, usar tools/MCP e agir dentro de limites. | Fontes consultadas, decisões e efeitos verificados. |
 | Production On-Call Agent<br>sessões 4–6 | Memória entre execuções, segurança e avaliação repetida. | Memórias corrigidas, permissões respeitadas e regressões medidas. |
 | 24/7 Incident Response Center<br>sessões 7–9 | Correções técnicas, coordenação multiagente e retoma. | Trabalho integrado e recuperação sem repetir efeitos. |
@@ -65,12 +65,12 @@ Os marcos evoluem o mesmo sistema. Num projeto próprio, a progressão deve demo
 
 <!-- page 5 -->
 
-*ÂMBITO DO TRABALHO*
+ÂMBITO DO TRABALHO
 
-# Base fornecida e trabalho a desenvolver
+## Base fornecida e trabalho a desenvolver
 
 | BASE DA PROPOSTA COMUM | TRABALHO A DESENVOLVER |
-|---|---|
+| --- | --- |
 | Simulador, fontes e cenários de incidente. | Harness, contexto e interfaces de tools. |
 | Runbooks, tools e servidores MCP de base. | Políticas de memória, permissões e aprovação. |
 | Executor e casos iniciais de avaliação. | Agentes, contratos de tarefa e coordenação. |
@@ -80,12 +80,12 @@ Adaptar o código e os padrões das aulas. Uma interface simples é suficiente; 
 
 <!-- page 6 -->
 
-*REQUISITOS MÍNIMOS · CAPACIDADES*
+REQUISITOS MÍNIMOS · CAPACIDADES
 
-# O que o sistema final deve incluir
+## O que o sistema final deve incluir
 
 | | |
-|---|---|
+| --- | --- |
 | **Fluxo principal** | Funciona de ponta a ponta, do pedido ao resultado verificado, com contexto selecionado. Resposta controlada quando falta informação, o output é inválido ou um serviço falha. |
 | **Tools e MCP** | Tools com contratos claros e uma integração MCP funcional, com seleção das capacidades expostas. Outputs estruturados validados em código antes de serem usados no passo seguinte. |
 | **Memória** | Estado entre execuções com origem, validade, correção e isolamento definidos. |
@@ -93,11 +93,11 @@ Adaptar o código e os padrões das aulas. Uma interface simples é suficiente; 
 
 <!-- page 7 -->
 
-*REQUISITOS MÍNIMOS · EXECUÇÃO*
+REQUISITOS MÍNIMOS · EXECUÇÃO
 
-# Ações controladas e execução recuperável
+## Ações controladas e execução recuperável
 
-|  |  |
+| | |
 | --- | --- |
 | **Efeitos verificáveis** | Executar uma ação, mesmo simulada, e confirmar a consequência antes de concluir ou repetir. |
 | **Permissões** | Aplicar limites em código, proteger dados e pedir aprovação nas ações que a exigem. |
@@ -106,12 +106,12 @@ Adaptar o código e os padrões das aulas. Uma interface simples é suficiente; 
 
 <!-- page 8 -->
 
-*PROJETO PRÓPRIO · EQUIVALÊNCIA*
+PROJETO PRÓPRIO · EQUIVALÊNCIA
 
-# Como evoluir um projeto do Curso 1
+## Como evoluir um projeto do Curso 1
 
 | DIMENSÃO | EXEMPLO: EVOLUÇÃO DE UM ASSISTENTE DE COMPLIANCE |
-|---|---|
+| --- | --- |
 | Decisão e ação | Investigar evidência e abrir uma tarefa de correção com a aprovação necessária. |
 | Coordenação | Separar recolha, revisão e remediação, com contratos e verificação do resultado conjunto. |
 | Estado e retoma | Guardar decisões e aprovações; retomar após interrupção com a versão atual do documento. |
@@ -119,12 +119,12 @@ Adaptar o código e os padrões das aulas. Uma interface simples é suficiente; 
 
 <!-- page 9 -->
 
-*AVALIAÇÃO E DEMONSTRAÇÃO*
+AVALIAÇÃO E DEMONSTRAÇÃO
 
-# Critérios e evidência a demonstrar
+## Critérios e evidência a demonstrar
 
 | CRITÉRIO | EVIDÊNCIA NA DEMONSTRAÇÃO E NOS CASOS |
-|---|---|
+| --- | --- |
 | Conclusão da tarefa | Caso com várias fontes e resultado verificado; resposta controlada perante informação em falta ou falhas. |
 | Controlo e segurança | Ação autorizada com efeito confirmado; ação indevida recusada; dados e aprovações respeitados. |
 | Coordenação e retoma | Resultados integrados, falha entre especialistas detetada e interrupção recuperada sem repetir efeitos indevidos. |
@@ -133,12 +133,12 @@ Adaptar o código e os padrões das aulas. Uma interface simples é suficiente; 
 
 <!-- page 10 -->
 
-*APRESENTAÇÃO E ENTREGA*
+APRESENTAÇÃO E ENTREGA
 
-# O que entregar
+## O que entregar
 
 | | |
-|---|---|
+| --- | --- |
 | **Proposta** | Problema, utilizador, fluxo e diagrama; num projeto próprio, correspondência com os requisitos. |
 | **Repositório** | Código, dependências declaradas e lock, `.env.example` sem segredos e versões dos marcos. |
 | **README** | Setup e execução, arquitetura, políticas, decisões, limitações e demo. Assistentes de IA permitidos, com uso declarado. |

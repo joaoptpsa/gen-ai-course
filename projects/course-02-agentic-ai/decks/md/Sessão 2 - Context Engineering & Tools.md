@@ -1,8 +1,8 @@
 <!-- page 1 -->
 
-*CURSO 2 / SESSÃO 2*
-
 # Context Engineering, Tools e Skills
+
+CURSO 2 / SESSÃO 2
 
 Selecionar evidência e controlar os efeitos das ações
 
@@ -11,11 +11,11 @@ Luís Noronha
 
 <!-- page 2 -->
 
-*ENQUADRAMENTO*
+ENQUADRAMENTO
 
-# O agente recebe contexto a mais e repete ações
+## O agente recebe contexto a mais e repete ações
 
-## Recebe contexto a mais
+### Recebe contexto a mais
 
 O agente que os alunos recebem no início do exercício (o *starter*) envia mais de 100 000 tokens logo no primeiro pedido.
 
@@ -23,7 +23,7 @@ Inclui todos os alertas, cerca de 5 000 linhas de log e todos os runbooks.
 
 A causa do incidente está, muitas vezes, numa única linha.
 
-## Repete ações com efeitos
+### Repete ações com efeitos
 
 Se o mesmo reinício for pedido duas vezes, a instância é reiniciada duas vezes.
 
@@ -35,12 +35,12 @@ Nos dois casos, há dois reinícios onde bastava um.
 
 <!-- page 3 -->
 
-*ENQUADRAMENTO*
+ENQUADRAMENTO
 
-# Onde as equipas falham hoje
+## Onde as equipas falham hoje
 
-|   |   |
-|---|---|
+| | |
+| --- | --- |
 | **Contexto longo** | Assume-se que o modelo usa bem todo o contexto. Na prática, o desempenho cai à medida que o contexto cresce. |
 | **Tools que devolvem tudo** | O resultado de uma tool entra no contexto. Devolver todos os logs produz um prompt enorme. |
 | **Catálogos que crescem** | Cada tool ligada entra no contexto, mesmo sem ser usada. 58 tools de 5 servidores MCP ocupam cerca de 55 mil tokens. |
@@ -50,12 +50,12 @@ Fonte: Anthropic, "Introducing advanced tool use" (2025).
 
 <!-- page 4 -->
 
-*ENQUADRAMENTO*
+ENQUADRAMENTO
 
-# Objetivos da sessão
+## Objetivos da sessão
 
 | | |
-|---|---|
+| --- | --- |
 | **Selecionar evidência** | Decidir o que entra sempre no contexto, o que só entra quando é preciso e o que nunca entra. Tudo dentro de 40 mil tokens para a execução inteira. |
 | **Desenhar tools que resumem** | Transformar milhares de linhas em poucos templates. Incluir só o runbook que se aplica. |
 | **Tornar ações seguras** | Garantir que repetir uma ação não a executa duas vezes, e que só se age se a razão para agir ainda existe. |
@@ -64,12 +64,12 @@ Cada capacidade é testada no simulador com checks PASS/FAIL.
 
 <!-- page 5 -->
 
-*CONTEXT ROT*
+CONTEXT ROT
 
-# Mais contexto, pior uso da evidência
+## Mais contexto, pior uso da evidência
 
 | | |
-|---|---|
+| --- | --- |
 | **Tamanho** | Em 18 modelos, o desempenho cai quando o contexto cresce, mesmo em tarefas simples. |
 | **Distratores** | Um texto parecido com a resposta, mas errado, já baixa o desempenho. Com quatro, baixa mais. |
 | **Foco** | Em perguntas sobre conversas longas, dar só os cerca de 300 tokens relevantes dá melhores resultados do que dar cerca de 113 mil tokens. Em todos os modelos. |
@@ -81,9 +81,9 @@ O alerta fala de HTTP 503 no gateway. A linha da causa vai conter essas palavras
 
 <!-- page 6 -->
 
-*CUSTO E CACHING*
+CUSTO E CACHING
 
-# Cada pedido ao modelo volta a enviar o contexto todo
+## Cada pedido ao modelo volta a enviar o contexto todo
 
 > diagram: gráfico de barras empilhadas por pedido
 > componentes: barras (pedido 1 a 4), linha tracejada de limite, legenda
@@ -116,17 +116,17 @@ Fontes: README do exercício; documentação de prompt caching da Anthropic e da
 
 <!-- page 7 -->
 
-*ESTRATÉGIAS DE CONTEXTO*
+ESTRATÉGIAS DE CONTEXTO
 
-# No início, o mínimo. O resto, quando for preciso.
+## No início, o mínimo. O resto, quando for preciso
 
-## Sempre no contexto
+### Sempre no contexto
 
 Entra em todos os pedidos. Por exemplo, o Claude Code inclui o `CLAUDE.md` no início.
 
 Bom para o que é sempre preciso e pequeno.
 
-## Só quando é preciso
+### Só quando é preciso
 
 Guardar só referências: caminhos de ficheiros, consultas, identificadores. Uma tool vai buscar o conteúdo quando o agente precisa dele.
 
@@ -136,15 +136,15 @@ Política em três linhas: sempre no contexto, só quando é preciso, nunca. O q
 
 <!-- page 8 -->
 
-*RESUMO E COMPACTAÇÃO*
+RESUMO E COMPACTAÇÃO
 
-# Um resumo pode apagar a exceção
+## Um resumo pode apagar a exceção
 
-## Fonte
+### Fonte
 
 “Falhas recorrentes após o patch. A instância secundária está em manutenção.”
 
-## Resumo
+### Resumo
 
 “Falhas recorrentes após o patch.”
 
@@ -160,12 +160,12 @@ Fonte: Anthropic, “Effective context engineering for AI agents” (2025). O ex
 
 <!-- page 9 -->
 
-*INTERFACE AGENTE–COMPUTADOR*
+INTERFACE AGENTE–COMPUTADOR
 
-# O resultado de uma tool é contexto
+## O resultado de uma tool é contexto
 
 | | |
-|---|---|
+| --- | --- |
 | **Respostas curtas** | No exemplo da Anthropic, a resposta concisa de uma tool usou 72 tokens; a detalhada, 206. |
 | **Cortar com aviso** | Limitar resultados grandes e dizer ao modelo que foram cortados. O Claude Code limita cada resposta de uma tool a 25 mil tokens. |
 | **Erros úteis** | Dizer ao modelo como corrigir o pedido, não só o código do erro. |
@@ -177,12 +177,12 @@ Fonte: Anthropic, “Writing effective tools for agents” (2025). Em 2024, o SW
 
 <!-- page 10 -->
 
-*CATÁLOGOS DE TOOLS*
+CATÁLOGOS DE TOOLS
 
-# Mais tools, pior escolha
+## Mais tools, pior escolha
 
 | | |
-|---|---|
+| --- | --- |
 | **Custo fixo** | Cada tool ligada entra no contexto, mesmo sem ser usada. 58 tools ocupam cerca de 55 mil tokens. E tools parecidas confundem-se. |
 | **Pré-seleção (RAG-MCP)** | Antes de chamar o modelo, uma pesquisa escolhe as tools mais parecidas com a tarefa. O modelo só vê essas. A tool certa passou a ser escolhida em 43,1 % dos casos, contra 13,6 % com o catálogo inteiro. |
 | **Pesquisa de tools** | O modelo começa sem as definições. Quando precisa de uma tool, pesquisa-a no catálogo e só essa entra no contexto. Nos testes da Anthropic, a escolha certa subiu de 49 % para 74 % (Opus 4). |
@@ -192,12 +192,12 @@ Fontes: Anthropic, "Introducing advanced tool use" (2025); Gan e Sun, "RAG-MCP" 
 
 <!-- page 11 -->
 
-*SKILLS E PROCEDIMENTOS*
+SKILLS E PROCEDIMENTOS
 
-# O procedimento só entra no contexto quando se aplica
+## O procedimento só entra no contexto quando se aplica
 
 | | |
-|---|---|
+| --- | --- |
 | **1 · Metadados** | Sempre no contexto: nome, descrição curta e a que versões se aplica ( `applies_to` ). |
 | **2 · Instruções** | Os passos do procedimento. Só entram quando os metadados correspondem à tarefa. |
 | **3 · Anexos** | Ficheiros e scripts de apoio. Só entram se os passos os pedirem. |
@@ -214,9 +214,9 @@ Fontes: Anthropic, "Equipping agents for the real world with Agent Skills" (2025
 
 <!-- page 12 -->
 
-*RESUMIR LOGS*
+RESUMIR LOGS
 
-# Agrupar as linhas por forma e mostrar primeiro as raras
+## Agrupar as linhas por forma e mostrar primeiro as raras
 
 Antes: milhares de linhas, quase todas com a mesma forma.
 
@@ -240,9 +240,9 @@ Ideia do Drain (He et al., ICWS 2017), simplificada. Exemplo ilustrativo, não �
 
 <!-- page 13 -->
 
-*CASO REAL A*
+CASO REAL A
 
-# Um agente de email, fevereiro de 2026
+## Um agente de email, fevereiro de 2026
 
 > Summer Yue, da Meta, pede ao seu agente OpenClaw: “Sugere o que arquivar ou apagar. Não ajas até eu dizer.”
 >
@@ -258,12 +258,12 @@ Fonte: relato público de Summer Yue (fevereiro de 2026), resumido por Simon Wil
 
 <!-- page 14 -->
 
-*ENCONTRAR A AGULHA SEM LER O PALHEIRO*
+ENCONTRAR A AGULHA SEM LER O PALHEIRO
 
-# Exercício 1
+## Exercício 1
 
 | | |
-|---|---|
+| --- | --- |
 | **A · Política** | Decidir o que entra sempre no primeiro pedido, o que só entra quando é preciso e o que nunca entra. Máximo de 40 mil tokens para a execução inteira. |
 | **B · Resumo de logos** | Agrupar as linhas em templates e pôr primeiro os raros. Cada template leva uma linha de exemplo e a sua referência no log. |
 | **C · Runbook** | Incluir só o runbook que se aplica à versão em produção. |
@@ -272,14 +272,14 @@ A pista pode ser uma linha rara, noutro componente, entre milhares.
 
 <!-- page 15 -->
 
-*VERIFICAR AS CONSEQUÊNCIAS*
+VERIFICAR AS CONSEQUÊNCIAS
 
-# A ação teve efeito?
+## A ação teve efeito?
 
 Depois de chamar uma tool, o agente tem de confirmar o que mudou no sistema.
 
 | O QUE SE SABE | O QUE O AGENTE VERIFICA |
-|---|---|
+| --- | --- |
 | A execução foi confirmada. | Que efeito teve no alvo? Houve consequências indesejadas? |
 | A ação foi recusada antes de executar. | Porque não foi aplicada? Ainda faz sentido agir? |
 | Não chegou confirmação do resultado. | Consultar o registo da execução e o estado do alvo antes de decidir se repete. |
@@ -288,11 +288,11 @@ Uma instância reiniciada pode continuar com o mesmo problema. Confirmar a execu
 
 <!-- page 16 -->
 
-*PRÉ-CONDIÇÕES E DRY-RUN*
+PRÉ-CONDIÇÕES E DRY-RUN
 
-# A razão para agir ainda existe?
+## A razão para agir ainda existe?
 
-## Compare-and-set
+### Compare-and-set
 
 Entre o diagnóstico e a ação, o mundo muda.
 
@@ -300,7 +300,7 @@ Ler o estado no momento de agir. Agir só se ainda for o que justificou a ação
 
 No exercício: reiniciar só se a memória estiver acima de 90 % ou a instância parada. Senão, recusar e dizer porquê.
 
-## Dry-run
+### Dry-run
 
 Para ações de grande alcance, responder primeiro com o que se faria.
 
@@ -312,9 +312,9 @@ A instrução orienta o modelo. A verificação no código impede o efeito.
 
 <!-- page 17 -->
 
-*CASO REAL B*
+CASO REAL B
 
-# Replit, julho de 2025
+## Replit, julho de 2025
 
 > Jason Lemkin, da SaaStr, testa o agente de código da Replit durante 12 dias.
 >
@@ -330,12 +330,12 @@ Fontes: The Register (22-07-2025); AI Incident Database, relatório 5593.
 
 <!-- page 18 -->
 
-*AÇÕES SEGURAS DE REPETIR*
+AÇÕES SEGURAS DE REPETIR
 
-# Exercício 2
+## Exercício 2
 
 | | |
-|---|---|
+| --- | --- |
 | **Confirmar o efeito** | Verificar se a ação já aconteceu e o que mudou no sistema, incluindo quando não chega resposta. |
 | **Pré-condição** | Reiniciar uma instância só se a razão para isso ainda se verifica. |
 | **Dry-run** | Sem confirmação explícita, o reinício do serviço inteiro só devolve o âmbito e o impacto. |
@@ -344,12 +344,12 @@ Fontes: The Register (22-07-2025); AI Incident Database, relatório 5593.
 
 <!-- page 19 -->
 
-*PARA LEVAR*
+PARA LEVAR
 
-# Três ideias
+## Três ideias
 
 | | |
-|---|---|
+| --- | --- |
 | **Mais contexto não é melhor contexto** | Mais contexto e mais ruído pioram o uso da evidência. Selecionar o que entra, e manter uma forma de voltar à fonte. |
 | **A tool decide o que o modelo vê** | Mudar só a interface muda o resultado. Devolver templates e o runbook certo, não dados em bruto. |
 | **Uma ação exige confirmar os efeitos** | Verificar o que mudou no sistema antes de repetir ou dar a tarefa como concluída. |
