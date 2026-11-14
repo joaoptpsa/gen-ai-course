@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
@@ -99,14 +100,31 @@ def start_job(
     """
     if key in st.session_state:
         return
-    progress = JobProgress()
+    job = Job(Future(), JobProgress())
     if progress_argument:
-        kwargs[progress_argument] = progress.update
-    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="workbench-job")
-    future = executor.submit(handler, *args, **kwargs)
-    # The thread ends with the job: nothing else is submitted.
-    executor.shutdown(wait=False)
-    st.session_state[key] = Job(future, progress)
+        kwargs[progress_argument] = job.progress.update
+    # Stored before the work starts. Session state access is itself a point where Streamlit takes
+    # a pending rerun, so the other order could start a job and never store it.
+    st.session_state[key] = job
+    worker = threading.Thread(
+        target=_run_job, args=(job.future, handler, args, kwargs), name="workbench-job"
+    )
+    worker.start()
+
+
+def _run_job(
+    future: Future[Any],
+    handler: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> None:
+    """Thread body of a job: the handler's result or failure ends up in `future`."""
+    try:
+        result = handler(*args, **kwargs)
+    except BaseException as failure:  # noqa: BLE001 a job that never completes would block its page for good
+        future.set_exception(failure)
+        return
+    future.set_result(result)
 
 
 def await_job(key: str, result_key: str, waiting_text: str) -> None:
@@ -132,8 +150,9 @@ def await_job(key: str, result_key: str, waiting_text: str) -> None:
 def _keep_outcome(key: str, result_key: str, job: Job) -> None:
     """Move a finished job's result to `result_key`, or show its error, then forget the job.
 
-    A pending rerun takes effect at the next Streamlit call, so the result is stored before any,
-    and a failed job is forgotten only once its error is on the page.
+    Streamlit takes a pending rerun at any of its calls, session state access included, before
+    the call has an effect. The job is therefore forgotten last, so an interrupted step is
+    repeated by the next render.
     """
     failure = job.future.exception()
     if failure is None:
