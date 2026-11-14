@@ -1,42 +1,58 @@
 # Course 2 — Agentic AI: project
 
-The evolving project for Course 2: an incident-response system for the
-Meridian Exchange, a fictional stock exchange simulated locally.
-
-It grows in three milestones:
-
-1. First-Line Incident Agent (sessions 1–3)
-2. Production On-Call Agent (sessions 4–6)
-3. 24/7 Incident Response Center (sessions 7–9)
-
-Milestone briefs will live in `milestones/`.
+An incident-response system for the Meridian Exchange, a fictional stock
+exchange simulated locally. The brief, with its three milestones, is
+`decks/md/Projeto Agentic AI.md`.
 
 ## Workbench
 
-A CLI and a Streamlit GUI to explore cases, run and compare harnesses, track the
-brief's requirements and author cases. Run from anywhere in the repository:
+`bin/mrx-project` explores cases, runs and compares harnesses, tracks the
+brief's requirements and writes cases. It works from any directory; the
+examples run from this folder.
 
-```text
-projects/course-02-agentic-ai/bin/mrx-project --help
-projects/course-02-agentic-ai/bin/mrx-project gui
+```bash
+bin/mrx-project --help   # every command and subcommand takes --help
+bin/mrx-project gui      # the same actions in a Streamlit GUI
+
+# What there is to run, and what a case does without an agent.
+bin/mrx-project cases list
+bin/mrx-project harnesses list
+bin/mrx-project explore s01-gateway-latency --ticks 30
+
+# One harness on one case.
+bin/mrx-project run 01-agent-harness/harness s01-gateway-latency --offline
+
+# Several harnesses on several cases (every case without --case), saved as a set.
+bin/mrx-project compare --harness 01-agent-harness/harness --harness 01-agent-harness/harness_v2 \
+  --case s01-gateway-latency --case s01-stale-alert --offline --save baseline
+
+# Saved sets: list them, show one, diff two. compare --baseline <set-id> diffs as it runs.
+bin/mrx-project results list
+bin/mrx-project results show <set-id>
+bin/mrx-project results diff <baseline-set-id> <current-set-id>
+
+# The brief's requirements against the saved runs of their evidence cases.
+bin/mrx-project requirements status
+bin/mrx-project requirements evidence add <requirement-id> <case-id>
+bin/mrx-project requirements note <requirement-id> "text"
+
+# A new case: check it, then copy it into cases/ and checks/.
+bin/mrx-project cases validate my-case.yaml --check my-check.yaml
+bin/mrx-project cases write my-case.yaml --check my-check.yaml
 ```
 
-Every GUI action calls the same handler in `app/commands.py` as its CLI
-subcommand, and each page shows the equivalent command. Add new actions there
-first, then expose them in `app/cli.py` and the GUI. `--offline` (the "offline
-test model" in the GUI) runs harnesses without API calls.
-
-- `harnesses/`: project agent versions, each a file defining
-  `build_agent(model)`. The session harnesses are listed as read-only
-  baselines.
-- `results/`: saved result sets, committed as evidence. Tool results longer
-  than 2000 characters are truncated in saved sets.
-- Run records (`--json`, saved sets) carry `outcome`: `passed`, `failed`,
-  `not_evaluated` or `errored`. Read it instead of `passed`, which is the
+- `--offline` runs with a test model: no API calls, no cost. Without it, `run`
+  and `compare` call the model from `.env`, or the one given with `--model`.
+- `--json` prints any command's result as JSON. In a run record read `outcome`
+  (`passed`, `failed`, `not_evaluated` or `errored`), not `passed`: that is the
   evaluation's verdict and can be true for a run that ended without a report.
-- `requirements.yaml`: the brief's requirements, criteria and deliverables
-  with their evidence cases. The workbench rewrites it, so it holds no
-  comments.
+- A file in `harnesses/` that defines `build_agent(model)` is listed as
+  `project/<file name>`. The session harnesses are read-only baselines.
+- `--save` writes to `results/`, which is committed as evidence. Tool results
+  over 2000 characters are truncated there.
+- The workbench rewrites `requirements.yaml`, so it holds no comments.
+- A new action starts as a handler in `app/commands.py`; `app/cli.py` and the
+  GUI only call it.
 
 ## Layout
 
@@ -46,5 +62,3 @@ test model" in the GUI) runs harnesses without API calls.
 - `cases/`, `checks/`: scenarios and their success criteria. Keep the two
   folders side by side: `meridian` looks up a case's check at
   `<case dir>/../checks/<id>.yaml`.
-- `decks/`: the course decks (`pdf/`) and their Markdown transcriptions
-  (`md/`). The project brief is `decks/md/Projeto Agentic AI.md`.
