@@ -23,12 +23,36 @@ APPROVERS = {
 }
 HANDLED_ERRORS = (LookupError, ValueError, FileExistsError, RuntimeError, SystemExit)
 JOB_POLL_SECONDS = 0.2
+# Streamlit forgets a widget's value once its page is left. These keys are kept: the model choice,
+# so a run does not fall back to the paid default, and the YAML tab's text, so a loaded case is
+# not swapped for the form's rebuild.
+KEPT_WIDGET_KEYS = (
+    "run-model",
+    "run-model-text",
+    "cmp-model",
+    "cmp-model-text",
+    "yaml-scenario",
+    "yaml-check",
+)
 
 
 def page(title: str, caption: str) -> None:
+    """Start a page: its title and caption, and the widget values kept across pages."""
     st.set_page_config(page_title=f"{title} · Workbench", layout="wide")
+    keep_widget_values()
     st.title(title)
     st.caption(caption)
+
+
+def keep_widget_values() -> None:
+    """Re-assign the kept keys, which makes Streamlit hold them while their widget is off the page.
+
+    Every page must do this on every run: a value is dropped at the end of the first run that
+    neither renders its widget nor assigns it.
+    """
+    for key in KEPT_WIDGET_KEYS:
+        if key in st.session_state:
+            st.session_state[key] = st.session_state[key]
 
 
 def call(handler: Callable[..., T], *args: Any, **kwargs: Any) -> T | None:
@@ -137,7 +161,9 @@ def model_picker(key: str) -> Any:
     if choice == OFFLINE_MODEL:
         return TestModel()
     if choice == "other…":
-        return st.text_input("Model string", value=default, key=f"{key}-model-text")
+        # The default goes in through session state: a kept key must not also get `value=`.
+        st.session_state.setdefault(f"{key}-model-text", default)
+        return st.text_input("Model string", key=f"{key}-model-text")
     return choice
 
 
