@@ -171,7 +171,7 @@ def summarise(runs: list[RunRecord]) -> list[dict[str, Any]]:
                 "runs": len(group),
                 "passed": sum(1 for run in group if run.passed),
                 "pass_rate": _pass_rate(group),
-                "errors": sum(1 for run in group if run.error),
+                "errors": sum(1 for run in group if run.outcome == "errored"),
                 "failing_checks": failing,
                 "mean_input_tokens": sum(run.input_tokens for run in group)
                 / len(group),

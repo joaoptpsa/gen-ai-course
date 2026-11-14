@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
@@ -28,10 +28,28 @@ from meridian.evaluate import report_as_dict
 
 APPROVER_FORMS = '"approve_all", "deny_all" or "roles:<role>,<role>"'
 
+Outcome = Literal["passed", "failed", "not_evaluated", "errored"]
+
 # meridian registers every load of a harness file under one module name, and pydantic resolves a
 # model's annotations through that name. Two threads loading at once leave one of them with a
 # report model that is "not fully defined", so loads take turns.
 _HARNESS_LOADING = threading.Lock()
+
+
+def outcome_of(error: str | None, passed: bool | None) -> Outcome:
+    """How a run ended, read from its error and its evaluation together.
+
+    An error wins: the run did not start, or the agent stopped without a report. meridian still
+    evaluates a run without a report, and `passed` keeps that verdict so pass rates match the
+    course's own suite; `errored` says the verdict is not the whole story.
+    """
+    if error:
+        return "errored"
+    if passed is None:
+        return "not_evaluated"
+    if passed:
+        return "passed"
+    return "failed"
 
 
 @dataclass
@@ -58,12 +76,20 @@ class RunRecord:
     approvals: list[dict[str, Any]]
     messages: list[dict[str, str]]
 
+    @property
+    def outcome(self) -> Outcome:
+        return outcome_of(self.error, self.passed)
+
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        record = asdict(self)
+        record["outcome"] = self.outcome
+        return record
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RunRecord:
-        return cls(**data)
+        # The outcome is derived, so a stored one is dropped instead of trusted.
+        fields = {key: value for key, value in data.items() if key != "outcome"}
+        return cls(**fields)
 
 
 def _git(repo_root: Path, *args: str) -> str:

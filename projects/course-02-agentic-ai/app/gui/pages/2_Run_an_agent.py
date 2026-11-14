@@ -22,11 +22,14 @@ def show_cost_warning() -> None:
 
 
 def show_banner(record: dict[str, Any]) -> None:
-    passed = record["passed"]
-    if passed is None:
+    outcome = record["outcome"]
+    if outcome == "errored":
+        st.error(f"Ended with an error: {record['error']}")
+        return
+    if outcome == "not_evaluated":
         st.info("Not evaluated: this case has no checks.")
         return
-    if passed:
+    if outcome == "passed":
         st.success("Passed")
         return
     st.error("Failed")
@@ -93,8 +96,6 @@ def show_result(result: dict[str, Any]) -> None:
     show_banner(record)
     show_checks(record["checks"])
     show_metrics(record)
-    if record["error"]:
-        st.error(record["error"])
     st.subheader("Report")
     st.json(record["report"] if record["report"] is not None else json.dumps(None))
     show_trace(record["trace"])

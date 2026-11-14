@@ -31,6 +31,9 @@ test model" in the GUI) runs harnesses without API calls.
   baselines.
 - `results/`: saved result sets, committed as evidence. Tool results longer
   than 2000 characters are truncated in saved sets.
+- Run records (`--json`, saved sets) carry `outcome`: `passed`, `failed`,
+  `not_evaluated` or `errored`. Read it instead of `passed`, which is the
+  evaluation's verdict and can be true for a run that ended without a report.
 - `requirements.yaml`: the brief's requirements, criteria and deliverables
   with their evidence cases. The workbench rewrites it, so it holds no
   comments.

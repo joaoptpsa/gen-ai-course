@@ -28,6 +28,12 @@ ExitCode = Callable[[Any], int]
 
 HANDLED_ERRORS = (LookupError, ValueError, FileExistsError, RuntimeError, SystemExit)
 DEFAULT_COMPONENT = "order-gateway"
+OUTCOME_LABELS = {
+    "passed": "passed",
+    "failed": "failed",
+    "not_evaluated": "not evaluated",
+    "errored": "ended with an error",
+}
 
 
 # Parsing -----------------------------------------------------------------------------
@@ -370,7 +376,7 @@ def _run(args: argparse.Namespace) -> Any:
 
 def _print_progress(done: int, total: int, record: dict[str, Any]) -> None:
     print(
-        f"{done}/{total} {record['harness']} {record['case_id']} passed={record['passed']}",
+        f"{done}/{total} {record['harness']} {record['case_id']} {record['outcome']}",
         file=sys.stderr,
     )
 
@@ -545,8 +551,8 @@ def _render_harnesses(result: list[dict[str, Any]]) -> None:
 
 def _render_run(result: dict[str, Any]) -> None:
     record = result["record"]
-    verdict = {True: "passed", False: "failed", None: "not evaluated"}[record["passed"]]
-    print(f"{record['harness']} on {record['case_id']}: {verdict}")
+    outcome = OUTCOME_LABELS[record["outcome"]]
+    print(f"{record['harness']} on {record['case_id']}: {outcome}")
     for check in record["checks"]:
         mark = "✓" if check["passed"] else "✗"
         print(f"  {mark} {check['name']}: {check['detail']}")
