@@ -1,0 +1,9 @@
+#!/bin/bash
+set -euo pipefail
+
+# The project folder name has a hyphen, so the `app` package is put on the import path here.
+PROJECT_DIR=$(dirname -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")")
+REPO_ROOT=$(dirname -- "$(dirname -- "$PROJECT_DIR")")
+
+# Stay in the caller's directory so file arguments resolve where they were typed.
+PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}" exec uv run --project "$REPO_ROOT" --locked python -m app.cli "$@"

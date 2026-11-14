@@ -35,3 +35,12 @@ packages = ["meridian"]
 [tool.basedpyright]
 # The default "recommended" mode flags every use of Any, which the course code relies on.
 typeCheckingMode = "standard"
+
+# The project workbench package `app` lives in a folder whose name is not importable.
+# Scoped to the project so its `agent/` folder does not shadow the session labs' `agent.py`.
+[[tool.basedpyright.executionEnvironments]]
+root = "projects/course-02-agentic-ai"
+
+[tool.ruff.lint.isort]
+# The project workbench package `app`; named here because its folder is not on ruff's source path.
+known-first-party = ["app"]

@@ -1,0 +1,120 @@
+deadline: '2026-11-30T23:59:00+00:00'
+items:
+- id: flow-end-to-end
+  group: capability
+  title: Main flow end to end
+  description: Run the main flow from input to result with selected context. Missing
+    information, invalid output and service failure get a controlled response.
+  evidence: []
+  notes: ''
+- id: tools-and-mcp
+  group: capability
+  title: Tools and MCP integration
+  description: Tools have clear contracts and one MCP integration works, exposing
+    only a selected subset. Structured outputs are validated in code.
+  evidence: []
+  notes: ''
+- id: memory-across-runs
+  group: capability
+  title: Memory across runs
+  description: Memory persists across runs and records origin and validity. It supports
+    correction and keeps scopes isolated.
+  evidence:
+  - s04-stale-false-positive
+  - s04-conflicting-shift-notes
+  - s04-other-team-note
+  notes: ''
+- id: coordination
+  group: capability
+  title: Coordination
+  description: An orchestrator delegates to at least two specialists with distinct
+    responsibilities. Their results are integrated into one outcome.
+  evidence: []
+  notes: ''
+- id: verifiable-effects
+  group: execution
+  title: Verifiable effects
+  description: Actions are followed by a check of their consequence before concluding
+    or retrying.
+  evidence: []
+  notes: ''
+- id: permissions-and-approval
+  group: execution
+  title: Permissions and approval
+  description: Permissions are enforced in code and data is protected. Approval is
+    requested where required.
+  evidence: []
+  notes: ''
+- id: resume
+  group: execution
+  title: Resume after interruption
+  description: Work state is persisted and resumes after an interruption. Permissions
+    and effects already produced are revalidated.
+  evidence: []
+  notes: ''
+- id: data-and-environment
+  group: execution
+  title: Data and environment
+  description: Data is synthetic and local data allows testing external service failures.
+    Keys live only in .env.
+  evidence: []
+  notes: ''
+- id: criterion-task-completion
+  group: criterion
+  title: Task completion
+  description: The agent completes the tasks of the cases it is given.
+  evidence: []
+  notes: ''
+- id: criterion-control-security
+  group: criterion
+  title: Control and security
+  description: Policies on actions, data and approvals hold in the traces.
+  evidence: []
+  notes: ''
+- id: criterion-coordination-resume
+  group: criterion
+  title: Coordination and resume
+  description: Specialists coordinate and interrupted runs resume correctly.
+  evidence: []
+  notes: ''
+- id: criterion-grounded-evolution
+  group: criterion
+  title: Grounded evolution
+  description: Baseline and versions are compared on the same cases and initial state,
+    with new cases, regressions and limits identified.
+  evidence: []
+  notes: ''
+- id: criterion-engineering-clarity
+  group: criterion
+  title: Engineering clarity
+  description: The project runs from the README on a clean clone, and architecture
+    decisions are backed by traces and results.
+  evidence: []
+  notes: ''
+- id: deliverable-proposal
+  group: deliverable
+  title: Proposal
+  description: Proposal covering the problem, the user, the flow and a diagram.
+  evidence: []
+  notes: ''
+- id: deliverable-repository
+  group: deliverable
+  title: Repository
+  description: Code, declared dependencies and lock file, .env.example without secrets,
+    and milestone versions.
+  evidence: []
+  notes: ''
+- id: deliverable-readme
+  group: deliverable
+  title: README
+  description: Setup and run, architecture, policies, decisions, limitations, demo
+    and declared AI-assistant use.
+  evidence: []
+  notes: ''
+- id: deliverable-cases-results
+  group: deliverable
+  title: Cases and results
+  description: Inputs, expected and obtained results, comparisons and traces, with
+    version, model and limits recorded.
+  evidence: []
+  notes: ''
