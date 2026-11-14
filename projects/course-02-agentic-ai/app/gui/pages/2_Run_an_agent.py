@@ -12,6 +12,7 @@ from app import commands
 from app.gui import common
 
 RESULT_KEY = "run-result"
+RUN_JOB = "run-job"
 
 
 def show_cost_warning() -> None:
@@ -147,18 +148,17 @@ def main() -> None:
     common.cli_hint(cli_command(harness, case_id, model, approver, max_requests, label))
 
     if st.button("Run", type="primary"):
-        with st.spinner("Running…"):
-            outcome = common.call(
-                commands.run,
-                harness,
-                case_id,
-                model=model,
-                approver=approver,
-                max_requests=max_requests,
-                save_label=label or None,
-            )
-        if outcome is not None:
-            st.session_state[RESULT_KEY] = outcome
+        common.start_job(
+            RUN_JOB,
+            commands.run,
+            harness,
+            case_id,
+            model=model,
+            approver=approver,
+            max_requests=max_requests,
+            save_label=label or None,
+        )
+    common.await_job(RUN_JOB, RESULT_KEY, "Running…")
     if RESULT_KEY in st.session_state:
         show_result(st.session_state[RESULT_KEY])
 

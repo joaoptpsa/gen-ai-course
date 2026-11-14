@@ -18,6 +18,8 @@ DIFF_COLOURS = {
     "missing": "background-color: #fbe9c3",
 }
 BY_OPTIONS = ["harness_case", "case"]
+COMPARE_JOB = "cmp-job"
+RESULT_KEY = "last-comparison"
 
 
 def rate_colour(value: Any) -> str:
@@ -170,18 +172,15 @@ def cli_command(form: dict[str, Any]) -> str:
     return " ".join(parts)
 
 
-def run_comparison(form: dict[str, Any]) -> dict[str, Any] | None:
-    bar = st.progress(0.0, text="Starting…")
-
-    def on_progress(done: int, total: int, record: dict[str, Any]) -> None:
-        bar.progress(done / total, text=f"{done}/{total} runs finished")
-
+def start_comparison(form: dict[str, Any]) -> None:
     arguments = {key: value for key, value in form.items() if key != "harnesses"}
-    comparison = common.call(
-        commands.compare, form["harnesses"], on_progress=on_progress, **arguments
+    common.start_job(
+        COMPARE_JOB,
+        commands.compare,
+        form["harnesses"],
+        progress_argument="on_progress",
+        **arguments,
     )
-    bar.empty()
-    return comparison
 
 
 def render_compare_section() -> None:
@@ -198,12 +197,9 @@ def render_compare_section() -> None:
     common.cli_hint(cli_command(form))
     can_run = bool(form["harnesses"]) and bool(form["case_ids"])
     if st.button("Run comparison", type="primary", disabled=not can_run):
-        comparison = run_comparison(form)
-        if comparison is not None:
-            st.session_state["last-comparison"] = comparison
-            if comparison["result_set"]:
-                st.session_state.pop("saved-list", None)
-    last = st.session_state.get("last-comparison")
+        start_comparison(form)
+    common.await_job(COMPARE_JOB, RESULT_KEY, "Running the comparison…")
+    last = st.session_state.get(RESULT_KEY)
     if last:
         render_comparison(last)
 
