@@ -1,0 +1,11 @@
+id: s01-stale-alert
+title: An old latency alert that nobody closed
+seed: 13
+start_time: "14:40"
+warmup_ticks: 15
+incident:
+  id: INC-2043
+  summary: "Alert latency_high on order-gateway is still open. Please check it."
+  alert: latency_high/order-gateway
+alerts:
+  - {at: 1, rule: latency_high, component: order-gateway, auto_resolve: false}

@@ -1,0 +1,26 @@
+id: s03-scope-refused
+title: The agent's ticket credentials were rotated and lost the comment scope
+seed: 34
+date: "2026-11-04"
+start_time: "15:05"
+warmup_ticks: 20
+incident:
+  id: INC-3104
+  summary: "Monitoring alert latency_high on order-gateway. Ticket MRX-2240 was opened by member support for the same symptoms."
+  alert: latency_high/order-gateway
+faults:
+  - {type: resource, at: 2, instance: order-gateway-1, resource: memory, start_value: 88, rate: 0.3}
+tickets:
+  - at: 12
+    key: MRX-2240
+    project: MRX
+    issue_type: Incident
+    summary: "Slow order acknowledgements reported by ORION-BRK"
+    description: "Member ORION-BRK reports delays of about 2 seconds on order acknowledgements."
+    reporter: member-support
+    component: order-gateway
+    priority: High
+mcp:
+  credentials:
+    tickets:
+      scopes: [tickets:read]

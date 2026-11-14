@@ -1,0 +1,29 @@
+id: s04-stale-false-positive
+title: A known false positive that stopped being one after a change
+seed: 41
+date: "2026-11-04"
+start_time: "09:08"
+warmup_ticks: 15
+incident:
+  id: INC-4101
+  summary: "Alert latency_high on order-gateway, a few minutes after the market opened."
+  alert: latency_high/order-gateway
+changes:
+  - change_id: CHG-4520
+    component: order-gateway
+    kind: config
+    description: "Enable connection pool pre-warming before the open (removes the warm-up phase after 09:00)"
+    at: -1530
+faults:
+  - {type: resource, at: 2, instance: order-gateway-2, resource: memory, start_value: 88, rate: 0.3}
+memory_seed:
+  - memory_id: MEM-0001
+    kind: known_issue
+    subject: order-gateway
+    content: "latency_high on order-gateway between 09:00 and 09:20 is a known false positive: the connection pool warms up after the open. It clears by itself; no action needed."
+    source_type: user
+    source_ref: rita.alves
+    author: rita.alves
+    team: trading-ops
+    created_at: "2026-10-14 09:40"
+    confidence: 0.9

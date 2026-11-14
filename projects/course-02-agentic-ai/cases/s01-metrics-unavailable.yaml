@@ -1,0 +1,13 @@
+id: s01-metrics-unavailable
+title: Order gateway latency while the metrics backend is down
+seed: 12
+start_time: "11:20"
+warmup_ticks: 15
+incident:
+  id: INC-2042
+  summary: "Alert latency_high on order-gateway. A member says orders are taking several seconds."
+  alert: latency_high/order-gateway
+faults:
+  - {type: resource, at: 2, instance: order-gateway-1, resource: memory, start_value: 88, rate: 0.3}
+tools:
+  read_metrics: {unavailable: true}

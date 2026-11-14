@@ -1,0 +1,44 @@
+id: s04-conflicting-shift-notes
+title: Two shift notes disagree about a night rollback
+seed: 42
+date: "2026-11-04"
+start_time: "09:10"
+warmup_ticks: 20
+incident:
+  id: INC-4102
+  summary: "Alert error_rate_high on order-gateway. Some orders are rejected with HTTP 503."
+  alert: error_rate_high/order-gateway
+changes:
+  - change_id: CHG-4471
+    component: reference-db
+    kind: config
+    description: "Tune reference-db connection settings"
+    at: -440
+faults:
+  - type: change
+    at: -440
+    change_id: CHG-4471
+    effects:
+      - {component: order-gateway, error_rate: 0.3, reason: "database connection rejected"}
+      - {component: settlement, error_rate: 0.2, reason: "database connection rejected"}
+memory_seed:
+  - memory_id: MEM-0002
+    kind: shift_note
+    subject: reference-db
+    content: "Night shift: errors on order-gateway and settlement were caused by CHG-4471 (reference-db config). Rolled back at 03:05; errors gone."
+    source_type: agent
+    source_ref: night run INC-4090
+    author: agent-first-line
+    team: trading-ops
+    created_at: "2026-11-04 03:10"
+    confidence: 0.8
+  - memory_id: MEM-0003
+    kind: shift_note
+    subject: reference-db
+    content: "The 03:05 rollback of CHG-4471 failed (lock held by the DB team). CHG-4471 is still active. Escalated to db-team; waiting for an approved rollback window."
+    source_type: user
+    source_ref: rita.alves
+    author: rita.alves
+    team: trading-ops
+    created_at: "2026-11-04 05:40"
+    confidence: 0.9

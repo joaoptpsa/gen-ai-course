@@ -1,0 +1,32 @@
+id: s02-feed-scale-change
+title: Gateway errors from a feed two hops away
+seed: 24
+start_time: "15:05"
+warmup_ticks: 120
+background_log_lines: 40
+incident:
+  id: INC-2105
+  summary: "Alert error_rate_high on order-gateway. Members report orders rejected with HTTP 503."
+  alert: error_rate_high/order-gateway
+changes:
+  - change_id: CHG-4507
+    component: order-gateway
+    kind: config
+    description: "Tune order-gateway session timeouts"
+    at: 97
+  - change_id: CHG-4512
+    component: market-data
+    kind: config
+    description: "Refresh market-data publisher settings"
+    at: 100
+faults:
+  - type: change
+    at: 100
+    change_id: CHG-4512
+    effects:
+      - {component: order-gateway, error_rate: 0.25, reason: "matching-engine rejected order: price outside band"}
+      - {component: matching-engine, error_rate: 0.1, reason: "price band check failed: last price off by 100x"}
+  - {type: noise, at: 104, noise: duplicate_alerts, component: order-gateway, rule: error_rate_high, count: 60}
+logs:
+  - {at: 97, component: order-gateway, instance: order-gateway-1, level: INFO, message: "INFO  config reloaded: session_timeout_s 30 -> 45 (CHG-4507)"}
+  - {at: 100, component: market-data, instance: market-data-2, level: WARN, message: "WARN  publisher reloaded: price_scale 4 -> 2 for all symbols (CHG-4512); consumers still decode with scale 4"}

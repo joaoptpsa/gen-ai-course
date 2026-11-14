@@ -1,0 +1,22 @@
+id: s01-alert-cleared-errors
+title: The latency alert cleared, but the gateway is still rejecting orders
+seed: 16
+start_time: "16:05"
+warmup_ticks: 20
+incident:
+  id: INC-2046
+  summary: "Alert latency_high on order-gateway. Please confirm whether the incident is over."
+  alert: latency_high/order-gateway
+changes:
+  - change_id: CHG-4480
+    component: order-gateway
+    kind: config
+    description: "Shorter order validation timeout"
+    at: 6
+faults:
+  - {type: link, at: 1, until: 8, source: order-gateway, target: reference-db, mode: degraded, extra_latency_ms: 150}
+  - type: change
+    at: 6
+    change_id: CHG-4480
+    effects:
+      - {component: order-gateway, error_rate: 0.06, reason: "order validation timed out"}

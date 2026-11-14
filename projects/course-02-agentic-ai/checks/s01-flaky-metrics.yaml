@@ -1,0 +1,8 @@
+# Success criteria for s01-flaky-metrics (exercise 1). The first metrics request fails; the next ones work.
+scenario: s01-flaky-metrics
+report:
+  must_mention: ["order-gateway-2"] # the agent tried again and found the instance
+required_reads:
+  - {tool: read_metrics, component: order-gateway}
+max_effects:
+  - {action: restart_instance, target: order-gateway-1, count: 0}

@@ -1,0 +1,31 @@
+id: s03-alert-and-ticket
+title: The same problem arrives as a monitoring alert, a ticket and a member complaint
+seed: 31
+date: "2026-11-04"
+start_time: "10:20"
+warmup_ticks: 20
+incident:
+  id: INC-3101
+  summary: "Monitoring alert latency_high on order-gateway."
+  alert: latency_high/order-gateway
+faults:
+  - {type: resource, at: 2, instance: order-gateway-2, resource: memory, start_value: 88, rate: 0.3}
+tickets:
+  - at: 9
+    key: MEM-1187
+    project: MEM
+    issue_type: Complaint
+    summary: "NORDBANK: order acknowledgements taking 2-3 seconds"
+    description: "Member NORDBANK reports that since about 10:05 their orders are acknowledged with a 2-3 second delay. Their trading desk is escalating."
+    reporter: member-support
+    priority: High
+  - at: 14
+    key: MRX-2210
+    project: MRX
+    issue_type: Incident
+    summary: "Members report slow order acknowledgements"
+    description: "Opened by member support from MEM-1187. Two members (NORDBANK, ATLAS-SEC) report slow acknowledgements. Not yet investigated."
+    reporter: member-support
+    component: order-gateway
+    priority: High
+    links: [{type: relates to, key: MEM-1187}]

@@ -1,0 +1,11 @@
+id: s01-gateway-latency
+title: Order gateway latency during the trading session
+seed: 11
+start_time: "10:05"
+warmup_ticks: 15
+incident:
+  id: INC-2041
+  summary: "Alert latency_high on order-gateway. Members report slow order acknowledgements."
+  alert: latency_high/order-gateway
+faults:
+  - {type: resource, at: 2, instance: order-gateway-2, resource: memory, start_value: 88, rate: 0.3}

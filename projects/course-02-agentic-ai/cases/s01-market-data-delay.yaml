@@ -1,0 +1,11 @@
+id: s01-market-data-delay
+title: Market data arrives late
+seed: 15
+start_time: "13:20"
+warmup_ticks: 15
+incident:
+  id: INC-2045
+  summary: "Alert latency_high on market-data. Members see quotes arriving late."
+  alert: latency_high/market-data
+faults:
+  - {type: data, at: 2, component: market-data, delay_ms: 350}

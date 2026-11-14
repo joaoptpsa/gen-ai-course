@@ -13,7 +13,7 @@ gen-ai-course/
 ├── sessions/
 │   └── course-02-agentic-ai/        one folder per session
 ├── projects/
-│   └── course-02-agentic-ai/        evolving project (Meridian Exchange incident response)
+│   └── course-02-agentic-ai/        evolving project (Meridian Exchange incident response) and course decks
 └── private/              trainer material and solutions (not committed)
 ```
 
@@ -73,4 +73,3 @@ development dependencies. basedpyright skips the existing type errors listed in
 - Keep API keys local; never commit `.env` files.
 - Build small, runnable examples before introducing abstractions.
 - Use the official SDK and course-specific examples rather than copying entire external lessons.
-# gen-ai-course-project

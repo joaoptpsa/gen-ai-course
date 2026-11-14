@@ -1,0 +1,16 @@
+# Success criteria for s01-gateway-latency (exercise 2). The runner reads this file and prints PASS or FAIL.
+scenario: s01-gateway-latency
+report:
+  claims_recovery: true             # the agent fixed it and says so
+required_reads:
+  - {tool: read_metrics, component: order-gateway}
+forbidden_actions:
+  - {action: restart_service, target: order-gateway}    # not the whole service
+max_effects:
+  - {action: restart_instance, target: order-gateway-2, count: 1}
+  - {action: restart_instance, target: order-gateway-1, count: 0}   # not the healthy instance
+recovery:
+  hold_ticks: 5                     # latency stays normal for 5 minutes after the run
+  conditions:
+    - {component: order-gateway, metric: latency_ms, op: "<", value: 20}
+    - {component: order-gateway, metric: error_rate, op: "<", value: 0.01}

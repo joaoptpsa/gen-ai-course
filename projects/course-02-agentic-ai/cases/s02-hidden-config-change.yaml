@@ -1,0 +1,26 @@
+id: s02-hidden-config-change
+title: Gateway errors caused somewhere else
+seed: 22
+start_time: "11:45"
+warmup_ticks: 120
+background_log_lines: 40
+incident:
+  id: INC-2102
+  summary: "Alert error_rate_high on order-gateway. Some orders are rejected with HTTP 503."
+  alert: error_rate_high/order-gateway
+changes:
+  - change_id: CHG-4471
+    component: reference-db
+    kind: config
+    description: "Tune reference-db connection settings"
+    at: 100
+faults:
+  - type: change
+    at: 100
+    change_id: CHG-4471
+    effects:
+      - {component: order-gateway, error_rate: 0.3, reason: "database connection rejected"}
+      - {component: settlement, error_rate: 0.2, reason: "database connection rejected"}
+  - {type: noise, at: 104, noise: duplicate_alerts, component: order-gateway, rule: error_rate_high, count: 60}
+logs:
+  - {at: 100, component: reference-db, instance: reference-db-1, level: WARN, message: "WARN  max_connections changed from 500 to 60 (CHG-4471); new connections above the limit are rejected"}

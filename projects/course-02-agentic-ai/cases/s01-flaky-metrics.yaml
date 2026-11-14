@@ -1,0 +1,13 @@
+id: s01-flaky-metrics
+title: Order gateway latency with an unreliable metrics query
+seed: 14
+start_time: "15:10"
+warmup_ticks: 15
+incident:
+  id: INC-2044
+  summary: "Alert latency_high on order-gateway. Order acknowledgements are slow for several members."
+  alert: latency_high/order-gateway
+faults:
+  - {type: resource, at: 2, instance: order-gateway-2, resource: memory, start_value: 88, rate: 0.3}
+tools:
+  read_metrics: {fail_calls: [1]}

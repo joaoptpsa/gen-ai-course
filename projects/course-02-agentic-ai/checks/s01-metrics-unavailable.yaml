@@ -1,0 +1,6 @@
+# Success criteria for s01-metrics-unavailable (exercise 1). Metrics cannot be read in this case.
+scenario: s01-metrics-unavailable
+report:
+  claims_recovery: false            # without data the agent cannot confirm anything
+max_effects:
+  - {action: restart_instance, count: 0}   # no action without data

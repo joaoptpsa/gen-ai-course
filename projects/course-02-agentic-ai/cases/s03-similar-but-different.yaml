@@ -1,0 +1,23 @@
+id: s03-similar-but-different
+title: A gateway alert while an unrelated market data ticket is open
+seed: 32
+date: "2026-11-04"
+start_time: "11:40"
+warmup_ticks: 20
+incident:
+  id: INC-3102
+  summary: "Monitoring alert latency_high on order-gateway."
+  alert: latency_high/order-gateway
+faults:
+  - {type: resource, at: 2, instance: order-gateway-1, resource: memory, start_value: 88, rate: 0.3}
+  - {type: data, at: 1, component: market-data, delay_ms: 350}
+tickets:
+  - at: 6
+    key: MRX-2231
+    project: MRX
+    issue_type: Incident
+    summary: "Delays on the venue market data feed"
+    description: "Market data from the primary venue arrives 300-400 ms late. Several members see slow quotes. Network team checking the feed."
+    reporter: network-team
+    component: market-data
+    priority: Medium
