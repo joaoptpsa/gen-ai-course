@@ -73,11 +73,18 @@ if use_solutions():
 
 
 def busy() -> bool:
-    return any(getattr(st.session_state.get(key), "running", False) for key in ("storm", "replay", "duel"))
+    return any(
+        getattr(st.session_state.get(key), "running", False)
+        for key in ("storm", "replay", "duel")
+    )
 
 
 def checklist(checks: list[tuple[bool, str]]) -> None:
-    st.markdown("  \n".join(f":green[✓ {text}]" if ok else f":red[**✗ {text}**]" for ok, text in checks))
+    st.markdown(
+        "  \n".join(
+            f":green[✓ {text}]" if ok else f":red[**✗ {text}**]" for ok, text in checks
+        )
+    )
 
 
 def errors(run) -> None:
@@ -102,8 +109,16 @@ def finish(key: str, tab: str, row: dict) -> None:
         st.session_state[f"logged_{key}"] = True
         if not run.error:
             checks = run.verdict()
-            st.session_state.setdefault("runs", []).append({"Tab": tab, **row, "Seconds": run.seconds,
-                "Result": "all green" if all(ok for ok, _ in checks) else "; ".join(t for ok, t in checks if not ok)})
+            st.session_state.setdefault("runs", []).append(
+                {
+                    "Tab": tab,
+                    **row,
+                    "Seconds": run.seconds,
+                    "Result": "all green"
+                    if all(ok for ok, _ in checks)
+                    else "; ".join(t for ok, t in checks if not ok),
+                }
+            )
         st.rerun()
 
 
@@ -125,7 +140,14 @@ def storm_view() -> None:
     if not storm.running and not storm.error:
         checklist(storm.verdict())
     if storm.rows:
-        st.dataframe([{k: v for k, v in row.items() if k not in ("alerts", "matters")} for row in storm.rows], hide_index=True, width="stretch")
+        st.dataframe(
+            [
+                {k: v for k, v in row.items() if k not in ("alerts", "matters")}
+                for row in storm.rows
+            ],
+            hide_index=True,
+            width="stretch",
+        )
     if not storm.running:
         finish("storm", "1 · Storm", {"Model calls": storm.used})
 
@@ -140,7 +162,9 @@ def replay_view() -> None:
         return
     totals = replay.totals()
     a, b, c, d = st.columns(4)
-    a.metric("Right answers", f"{totals['right']} / {len(REQUESTS)}" if replay.rows else "–")
+    a.metric(
+        "Right answers", f"{totals['right']} / {len(REQUESTS)}" if replay.rows else "–"
+    )
     b.metric("Cost", f"${totals['cost']:.4f}")
     c.metric("Served from cache", totals["cache"])
     d.metric("Leaks", totals["leaks"])
@@ -149,8 +173,12 @@ def replay_view() -> None:
         checklist(replay.verdict())
     if replay.rows:
         rows = [{k: v for k, v in row.items() if k != "ok"} for row in replay.rows]
-        st.dataframe(rows, hide_index=True, width="stretch",
-                     column_config={"Result": st.column_config.TextColumn(width="large")})
+        st.dataframe(
+            rows,
+            hide_index=True,
+            width="stretch",
+            column_config={"Result": st.column_config.TextColumn(width="large")},
+        )
     if not replay.running:
         finish("replay", "2 · Gateway", {"Cost $": totals["cost"]})
 
@@ -180,42 +208,80 @@ def duel_view() -> None:
         st.code(script, language="python")
 
 
-storm_tab, gateway_tab, demo_tab = st.tabs(["1 · Alert storm", "2 · AI gateway", "Demo · Code mode"])
+storm_tab, gateway_tab, demo_tab = st.tabs(
+    ["1 · Alert storm", "2 · AI gateway", "Demo · Code mode"]
+)
 running = busy()
 
 with storm_tab:
-    st.caption(f"500 alerts in 5 minutes. Budget: {BUDGET} model calls; {RATE_LIMIT} per minute; an incident costs {INCIDENT_COST}. "
-               "Your policy: `starter/storm.py`.")
+    st.caption(
+        f"500 alerts in 5 minutes. Budget: {BUDGET} model calls; {RATE_LIMIT} per minute; an incident costs {INCIDENT_COST}. "
+        "Your policy: `starter/storm.py`."
+    )
     _, go = st.columns([5, 1], vertical_alignment="bottom")
-    if go.button("Run", type="primary", key="run_storm", width="stretch", disabled=running):
+    if go.button(
+        "Run", type="primary", key="run_storm", width="stretch", disabled=running
+    ):
         try:
             start("storm", Storm(models(ui.get_model())["small"]))
         except ValueError as error:
             st.error(str(error))
     with st.expander("The 500 alerts"):
-        st.dataframe(alerts(), hide_index=True, width="stretch",
-                     column_order=["id", "time", "source", "component", "rule", "severity", "env", "message"])
+        st.dataframe(
+            alerts(),
+            hide_index=True,
+            width="stretch",
+            column_order=[
+                "id",
+                "time",
+                "source",
+                "component",
+                "rule",
+                "severity",
+                "env",
+                "message",
+            ],
+        )
     live("storm", storm_view)
 
 with gateway_tab:
-    st.caption(f"A morning of the incident team: 12 requests. Small model: {SMALL}. Large model: {LARGE}. Your gateway: `starter/gateway.py`.")
+    st.caption(
+        f"A morning of the incident team: 12 requests. Small model: {SMALL}. Large model: {LARGE}. Your gateway: `starter/gateway.py`."
+    )
     _, go = st.columns([5, 1], vertical_alignment="bottom")
-    if go.button("Run", type="primary", key="run_replay", width="stretch", disabled=running):
+    if go.button(
+        "Run", type="primary", key="run_replay", width="stretch", disabled=running
+    ):
         try:
             start("replay", Replay(ui.get_model()))
         except ValueError as error:
             st.error(str(error))
     with st.expander("The 12 requests"):
-        st.dataframe([{k: r[k] for k in ("id", "kind", "role", "incident", "question", "context")} for r in REQUESTS],
-                     hide_index=True, width="stretch")
+        st.dataframe(
+            [
+                {
+                    k: r[k]
+                    for k in ("id", "kind", "role", "incident", "question", "context")
+                }
+                for r in REQUESTS
+            ],
+            hide_index=True,
+            width="stretch",
+        )
     live("replay", replay_view)
 
 with demo_tab:
-    st.caption("The same check, two ways: calling tools one by one, or writing one script that runs in a sandbox.")
+    st.caption(
+        "The same check, two ways: calling tools one by one, or writing one script that runs in a sandbox."
+    )
     st.markdown(f"> {TASK}")
     left, right = st.columns([5, 1], vertical_alignment="bottom")
-    left.caption(f"Sandbox: no imports; builtins: {', '.join(SAFE)}; 5 seconds; 4 000 characters of output.")
-    if right.button("Run both", type="primary", key="run_duel", width="stretch", disabled=running):
+    left.caption(
+        f"Sandbox: no imports; builtins: {', '.join(SAFE)}; 5 seconds; 4 000 characters of output."
+    )
+    if right.button(
+        "Run both", type="primary", key="run_duel", width="stretch", disabled=running
+    ):
         try:
             start("duel", Duel(models(ui.get_model())["large"]))
         except ValueError as error:

@@ -39,7 +39,15 @@ class Fleet:
         self._began = time.monotonic()
 
     def post(self, sender: str, to: str, text: str, kind: str = "message") -> None:
-        self.feed.append({"time": f"+{time.monotonic() - self._began:4.1f}s", "from": sender, "to": to, "text": text, "kind": kind})
+        self.feed.append(
+            {
+                "time": f"+{time.monotonic() - self._began:4.1f}s",
+                "from": sender,
+                "to": to,
+                "text": text,
+                "kind": kind,
+            }
+        )
 
     def set_card(self, name: str, status: str, activity: str = "") -> None:
         self.cards[name] = {"status": status, "activity": activity}
@@ -50,11 +58,23 @@ class Fleet:
         with self._lock:
             lease = self.leases.get(incident)
             now = time.monotonic()
-            if lease and (lease["done"] or (lease["owner"] != worker and lease["until"] > now)):
+            if lease and (
+                lease["done"] or (lease["owner"] != worker and lease["until"] > now)
+            ):
                 return False
             took_over = lease is not None and lease["owner"] != worker
-            self.leases[incident] = {"owner": worker, "until": now + LEASE, "done": False}
-        self.post(worker, "store", f"Lease on {incident}" + (" (the previous lease expired: taking it over)" if took_over else ""), "checkpoint")
+            self.leases[incident] = {
+                "owner": worker,
+                "until": now + LEASE,
+                "done": False,
+            }
+        self.post(
+            worker,
+            "store",
+            f"Lease on {incident}"
+            + (" (the previous lease expired: taking it over)" if took_over else ""),
+            "checkpoint",
+        )
         self._show_store()
         return True
 
@@ -65,21 +85,33 @@ class Fleet:
         self._show_store()
 
     def _show_store(self) -> None:
-        lines = [f"{i}: {'done' if l['done'] else l['owner']}" for i, l in sorted(self.leases.items())]
+        lines = [
+            f"{i}: {'done' if l['done'] else l['owner']}"
+            for i, l in sorted(self.leases.items())
+        ]
         self.set_card("store", "done", "\n".join(lines) or "empty")
 
     # The workers -----------------------------------------------------------------------------------
 
-    def _act(self, worker: str, incident: str, action: str, check_history: bool = False) -> None:
+    def _act(
+        self, worker: str, incident: str, action: str, check_history: bool = False
+    ) -> None:
         """Run the action. When taking over someone else's incident, read the systems' history first."""
         with self._lock:
             if check_history and any(e["incident"] == incident for e in self.effects):
                 skip = True
             else:
                 skip = False
-                self.effects.append({"incident": incident, "action": action, "worker": worker})
+                self.effects.append(
+                    {"incident": incident, "action": action, "worker": worker}
+                )
         if skip:
-            self.post(worker, "systems", f"{incident}: history says '{action}' already ran. Skip it.", "tool")
+            self.post(
+                worker,
+                "systems",
+                f"{incident}: history says '{action}' already ran. Skip it.",
+                "tool",
+            )
         else:
             self.post(worker, "systems", f"{incident}: {action}", "action")
 
@@ -91,7 +123,12 @@ class Fleet:
                     continue
                 taken.add(incident)
             elif not self._take(worker, incident):
-                self.post(worker, "store", f"{incident} belongs to another worker: next.", "tool")
+                self.post(
+                    worker,
+                    "store",
+                    f"{incident} belongs to another worker: next.",
+                    "tool",
+                )
                 continue
             self.set_card(worker, "working", f"{incident}: investigating")
             time.sleep(STEP)
@@ -99,7 +136,11 @@ class Fleet:
             self._act(worker, incident, action)
             time.sleep(STEP)
             if self.crash and worker == "worker-1" and incident == "INC-2":
-                self.set_card(worker, "error", "Crashed after acting on INC-2, before saving that it finished.")
+                self.set_card(
+                    worker,
+                    "error",
+                    "Crashed after acting on INC-2, before saving that it finished.",
+                )
                 self.post(worker, "board", "CRASH: worker 1 died.", "crash")
                 return
             if self.mode == "shared":
@@ -121,14 +162,21 @@ class Fleet:
 
     def start(self) -> threading.Thread:
         self.running = True
-        self.set_card("store", "done" if self.mode == "shared" else "unused", "empty" if self.mode == "shared" else "")
+        self.set_card(
+            "store",
+            "done" if self.mode == "shared" else "unused",
+            "empty" if self.mode == "shared" else "",
+        )
         thread = threading.Thread(target=self._run, daemon=True)
         thread.start()
         return thread
 
     def _run(self) -> None:
         try:
-            workers = [threading.Thread(target=self._worker, args=(w,)) for w in ("worker-1", "worker-2")]
+            workers = [
+                threading.Thread(target=self._worker, args=(w,))
+                for w in ("worker-1", "worker-2")
+            ]
             for w in workers:
                 w.start()
                 time.sleep(0.15)

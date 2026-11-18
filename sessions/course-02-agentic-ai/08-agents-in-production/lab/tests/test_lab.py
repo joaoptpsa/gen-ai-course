@@ -61,7 +61,9 @@ def test_naive_resume_repeats_the_resend(naive):
     assert room.crashed and room.world.count("resend_confirmations") == 2
     assert not all(good for good, _ in room.verdict())
     checkpoint = R.json.loads(room.path.read_text(encoding="utf-8"))
-    assert checkpoint["plan"][1]["status"] == "started"  # saved before acting, never updated: the crash
+    assert (
+        checkpoint["plan"][1]["status"] == "started"
+    )  # saved before acting, never updated: the crash
 
 
 def test_naive_resume_uses_an_expired_approval(naive):
@@ -86,7 +88,11 @@ def test_naive_a2a_client_resends_three_times(naive):
 def test_reference_a2a_client_is_clean(solutions):
     run_ = run(A.A2ARun(scripted()))
     assert all(good for good, _ in run_.verdict()), run_.verdict()
-    states = [m["text"] for m in run_.feed if m["from"] == "settlement" and "TASK_STATE_INPUT_REQUIRED" in m["text"]]
+    states = [
+        m["text"]
+        for m in run_.feed
+        if m["from"] == "settlement" and "TASK_STATE_INPUT_REQUIRED" in m["text"]
+    ]
     assert states  # it went through input-required and answered in the same task
 
 
@@ -95,8 +101,20 @@ def test_a2a_server_needs_the_token_and_dedupes_keys():
 
     world = R.World()
     server = A.SettlementAgent(scripted(), world, lambda *a: None)
-    send = {"jsonrpc": "2.0", "id": 1, "method": "SendMessage", "params": {"message": {"role": "ROLE_USER", "parts": [
-        {"text": "Resend batch-10:12, approval APR-001"}, {"data": {"idempotency_key": "k"}}]}}}
+    send = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "SendMessage",
+        "params": {
+            "message": {
+                "role": "ROLE_USER",
+                "parts": [
+                    {"text": "Resend batch-10:12, approval APR-001"},
+                    {"data": {"idempotency_key": "k"}},
+                ],
+            }
+        },
+    }
     assert "error" in asyncio.run(server.handle(send, None))
     first = asyncio.run(server.handle(send, A.TOKEN))["result"]["task"]
     again = asyncio.run(server.handle(send, A.TOKEN))["result"]["task"]
@@ -127,7 +145,9 @@ def test_world_rules():
     world = R.World()
     ref = world.approve("resend_confirmations", R.BATCH, "x", "t")
     assert world.resend_confirmations(R.BATCH, "k1", ref, "t")["outcome"] == "completed"
-    assert world.resend_confirmations(R.BATCH, "k1", ref, "t")["outcome"] == "already_done"
+    assert (
+        world.resend_confirmations(R.BATCH, "k1", ref, "t")["outcome"] == "already_done"
+    )
     assert world.count("resend_confirmations") == 1
     world.pause(20)
     assert not world.approval_status(ref)["valid"]
@@ -137,7 +157,15 @@ def test_world_rules():
     assert "before the trading session opened" in world2.approval_status(ref2)["reason"]
 
 
-@pytest.mark.parametrize(("mode", "crash", "clean"), [("memory", False, False), ("shared", False, True), ("shared", True, True), ("memory", True, False)])
+@pytest.mark.parametrize(
+    ("mode", "crash", "clean"),
+    [
+        ("memory", False, False),
+        ("shared", False, True),
+        ("shared", True, True),
+        ("memory", True, False),
+    ],
+)
 def test_workers(mode, crash, clean):
     fleet = run(W.Fleet(mode, crash=crash))
     assert all(good for good, _ in fleet.verdict()) == clean, fleet.verdict()
@@ -147,12 +175,18 @@ def test_app_runs_every_tab(solutions):
     import time
 
     from streamlit.testing.v1 import AppTest
+
     at = AppTest.from_file(str(LAB / "app.py"), default_timeout=60)
     at.session_state["model"] = scripted()
     at.run()
     assert not at.exception
     assert len(at.tabs) == 4
-    for key, state in (("run_a2a", "a2a"), ("run_review", "review"), ("run_room", "room"), ("run_fleet", "fleet")):
+    for key, state in (
+        ("run_a2a", "a2a"),
+        ("run_review", "review"),
+        ("run_room", "room"),
+        ("run_fleet", "fleet"),
+    ):
         at.button(key=key).click().run()
         for _ in range(400):
             if not at.session_state[state].running:

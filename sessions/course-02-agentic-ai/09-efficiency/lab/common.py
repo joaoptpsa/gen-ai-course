@@ -10,11 +10,17 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 STARTER = HERE.parent / "starter"
-SOLUTIONS = HERE.parents[3] / "private" / "course-02-agentic-ai" / "reference" / "session-09"
+SOLUTIONS = (
+    HERE.parents[3] / "private" / "course-02-agentic-ai" / "reference" / "session-09"
+)
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")  # keep the terminal quiet
 SMALL = os.getenv("ANTHROPIC_MODEL_SMALL", "claude-haiku-5-5")
 LARGE = os.getenv("ANTHROPIC_MODEL_LARGE", "claude-sonnet-5-5")
-PRICES = {"claude-haiku-5-5": (0.10, 0.50), "claude-sonnet-5-5": (2.00, 10.00), "claude-opus-5-5": (4.00, 20.00)}  # USD per 1M tokens (in, out)
+PRICES = {
+    "claude-haiku-5-5": (0.10, 0.50),
+    "claude-sonnet-5-5": (2.00, 10.00),
+    "claude-opus-5-5": (4.00, 20.00),
+}  # USD per 1M tokens (in, out)
 
 
 def use_solutions() -> bool:
@@ -54,4 +60,8 @@ def models(chosen: Any) -> dict[str, Any]:
 
 
 def model_name(model: Any) -> str:
-    return model.removeprefix("anthropic:") if isinstance(model, str) else getattr(model, "model_name", "test")
+    return (
+        model.removeprefix("anthropic:")
+        if isinstance(model, str)
+        else getattr(model, "model_name", "test")
+    )

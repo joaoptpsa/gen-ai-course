@@ -93,14 +93,37 @@ You work in tab **3 · Resume after a crash** and in the file `starter/resume.py
 """,
 }
 
-NAMES = {"team": "Team", "resume": "Your resume", "client": "Your client", "settlement": "Settlement Agent (A2A)",
-         "network": "Network", "database": "Database", "remediation": "Remediation", "reviewer": "Reviewer", "on-call": "On-call",
-         "checkpoint": "Checkpoint", "systems": "Systems", "board": "Board", "worker-1": "Worker 1", "worker-2": "Worker 2",
-         "store": "Shared store"}
-ROLES = {"network": "investigates", "database": "investigates", "remediation": "acts · needs approval", "on-call": "approves",
-         "checkpoint": "saved after each step", "resume": "your code, after the crash", "reviewer": "checks the real state",
-         "client": "your code, your team", "settlement": "another team's agent",
-         "worker-1": "takes incidents from the queue", "worker-2": "takes incidents from the queue", "store": "who has which incident"}
+NAMES = {
+    "team": "Team",
+    "resume": "Your resume",
+    "client": "Your client",
+    "settlement": "Settlement Agent (A2A)",
+    "network": "Network",
+    "database": "Database",
+    "remediation": "Remediation",
+    "reviewer": "Reviewer",
+    "on-call": "On-call",
+    "checkpoint": "Checkpoint",
+    "systems": "Systems",
+    "board": "Board",
+    "worker-1": "Worker 1",
+    "worker-2": "Worker 2",
+    "store": "Shared store",
+}
+ROLES = {
+    "network": "investigates",
+    "database": "investigates",
+    "remediation": "acts · needs approval",
+    "on-call": "approves",
+    "checkpoint": "saved after each step",
+    "resume": "your code, after the crash",
+    "reviewer": "checks the real state",
+    "client": "your code, your team",
+    "settlement": "another team's agent",
+    "worker-1": "takes incidents from the queue",
+    "worker-2": "takes incidents from the queue",
+    "store": "who has which incident",
+}
 
 ui.page("Agents in Production Lab", GUIDE)
 if use_solutions():
@@ -108,17 +131,35 @@ if use_solutions():
 
 
 def busy() -> bool:
-    return any(getattr(st.session_state.get(key), "running", False) for key in ("a2a", "review", "room", "fleet"))
+    return any(
+        getattr(st.session_state.get(key), "running", False)
+        for key in ("a2a", "review", "room", "fleet")
+    )
 
 
 def checklist(checks: list[tuple[bool, str]]) -> None:
-    st.markdown("  \n".join(f":green[✓ {text}]" if ok else f":red[**✗ {text}**]" for ok, text in checks))
+    st.markdown(
+        "  \n".join(
+            f":green[✓ {text}]" if ok else f":red[**✗ {text}**]" for ok, text in checks
+        )
+    )
 
 
 def cards(run, agents: list[str]) -> None:
     finished = not run.running
-    board.cards([{"name": NAMES[a], "role": ROLES[a], "status": run.cards.get(a, {}).get("status", "unused" if finished else "idle"),
-                  "activity": run.cards.get(a, {}).get("activity", "")} for a in agents])
+    board.cards(
+        [
+            {
+                "name": NAMES[a],
+                "role": ROLES[a],
+                "status": run.cards.get(a, {}).get(
+                    "status", "unused" if finished else "idle"
+                ),
+                "activity": run.cards.get(a, {}).get("activity", ""),
+            }
+            for a in agents
+        ]
+    )
 
 
 def errors(run) -> None:
@@ -132,9 +173,17 @@ def finish(key: str, tab: str, setup: str, calls) -> None:
         st.session_state[f"logged_{key}"] = True
         if not run.error:
             checks = run.verdict()
-            st.session_state.setdefault("runs", []).append({
-                "Tab": tab, "Setup": setup, "Model calls": calls(run), "Seconds": run.seconds,
-                "Result": "all green" if all(ok for ok, _ in checks) else "; ".join(t for ok, t in checks if not ok)})
+            st.session_state.setdefault("runs", []).append(
+                {
+                    "Tab": tab,
+                    "Setup": setup,
+                    "Model calls": calls(run),
+                    "Seconds": run.seconds,
+                    "Result": "all green"
+                    if all(ok for ok, _ in checks)
+                    else "; ".join(t for ok, t in checks if not ok),
+                }
+            )
         st.rerun()
 
 
@@ -188,7 +237,14 @@ def review_view() -> None:
     for row in review.rows:
         with st.container(border=True):
             st.markdown(f"**{row['trace']}**")
-            st.markdown("Monitors: " + (", ".join(f"`{a}`" for a in row["alerts"]) if row["alerts"] else "_silent_"))
+            st.markdown(
+                "Monitors: "
+                + (
+                    ", ".join(f"`{a}`" for a in row["alerts"])
+                    if row["alerts"]
+                    else "_silent_"
+                )
+            )
             st.markdown(f"Analyst: {row['analyst']}")
             with st.expander("What really happened"):
                 st.write(row["what_happened"])
@@ -203,7 +259,18 @@ def room_view() -> None:
     if room is None:
         st.caption("Pick a scenario and run.")
         return
-    cards(room, ["network", "database", "remediation", "on-call", "checkpoint", "resume", "reviewer"])
+    cards(
+        room,
+        [
+            "network",
+            "database",
+            "remediation",
+            "on-call",
+            "checkpoint",
+            "resume",
+            "reviewer",
+        ],
+    )
     errors(room)
     if not room.running and not room.error:
         checklist(room.verdict())
@@ -233,13 +300,23 @@ def fleet_view() -> None:
 
 
 a2a_tab, traces_tab, resume_tab, demo_tab = st.tabs(
-    ["1 · Ask another team's agent", "2 · Find the cause in the traces", "3 · Resume after a crash", "Demo · Two workers"])
+    [
+        "1 · Ask another team's agent",
+        "2 · Find the cause in the traces",
+        "3 · Resume after a crash",
+        "Demo · Two workers",
+    ]
+)
 running = busy()
 
 with a2a_tab:
-    st.caption("Settlement's systems belong to another team. Their agent speaks A2A. Your client: `starter/a2a_client.py`.")
+    st.caption(
+        "Settlement's systems belong to another team. Their agent speaks A2A. Your client: `starter/a2a_client.py`."
+    )
     _, go = st.columns([5, 1], vertical_alignment="bottom")
-    if go.button("Run", type="primary", key="run_a2a", width="stretch", disabled=running):
+    if go.button(
+        "Run", type="primary", key="run_a2a", width="stretch", disabled=running
+    ):
         try:
             start("a2a", A2ARun(ui.get_model()))
         except ValueError as error:
@@ -249,7 +326,9 @@ with a2a_tab:
     live("a2a", a2a_view)
 
 with traces_tab:
-    st.caption("Recorded runs of the session 7 team, as OpenTelemetry spans. Your monitors and analyst: `starter/monitors.py`.")
+    st.caption(
+        "Recorded runs of the session 7 team, as OpenTelemetry spans. Your monitors and analyst: `starter/monitors.py`."
+    )
     all_traces = recorded()
     titles = [trace.title for trace, _ in all_traces]
     pick, rec = st.columns([5, 1], vertical_alignment="bottom")
@@ -257,24 +336,39 @@ with traces_tab:
     if rec.button("Record a live run", key="record", width="stretch", disabled=running):
         try:
             ui.get_model()
-            with st.spinner("The session 7 team is working on INC-2 with the real model…"):
+            with st.spinner(
+                "The session 7 team is working on INC-2 with the real model…"
+            ):
                 record_live()
             st.rerun()
         except ValueError as error:
             st.error(str(error))
         except Exception as error:  # noqa: BLE001 - show it, keep the page
             st.error(f"The live run failed: {error}")
-    chosen = next((t for t, _ in all_traces if t.title == st.session_state.get("trace")), None)
+    chosen = next(
+        (t for t, _ in all_traces if t.title == st.session_state.get("trace")), None
+    )
     if chosen is not None:
         st.caption(f"{chosen.source}. Cost ${chosen.cost_usd():.4f}.")
         rows = waterfall_rows(chosen)
         board.waterfall(rows)
         with st.expander("One span, as OpenTelemetry records it"):
-            labels = [f"{i + 1:02d} · {'· ' * row['depth']}{row['label']}" for i, row in enumerate(rows)]
-            picked = st.selectbox("Span", labels, key=f"span_{chosen.name}", label_visibility="collapsed")
+            labels = [
+                f"{i + 1:02d} · {'· ' * row['depth']}{row['label']}"
+                for i, row in enumerate(rows)
+            ]
+            picked = st.selectbox(
+                "Span", labels, key=f"span_{chosen.name}", label_visibility="collapsed"
+            )
             st.json(rows[labels.index(picked)]["span"])
-        st.dataframe([{"Agent": agent, **row} for agent, row in chosen.agents().items()], hide_index=True, width="stretch")
-    if st.button("Run monitors and analyst", type="primary", key="run_review", disabled=running):
+        st.dataframe(
+            [{"Agent": agent, **row} for agent, row in chosen.agents().items()],
+            hide_index=True,
+            width="stretch",
+        )
+    if st.button(
+        "Run monitors and analyst", type="primary", key="run_review", disabled=running
+    ):
         try:
             start("review", Review(ui.get_model()))
         except ValueError as error:
@@ -282,10 +376,20 @@ with traces_tab:
     live("review", review_view)
 
 with resume_tab:
-    st.caption("The lab runs the first half of the incident and crashes. Your `starter/resume.py` continues.")
+    st.caption(
+        "The lab runs the first half of the incident and crashes. Your `starter/resume.py` continues."
+    )
     pick, go = st.columns([5, 1], vertical_alignment="bottom")
-    pick.segmented_control("Scenario", list(SCENARIOS), key="scenario", default=next(iter(SCENARIOS)))
-    if go.button("Run", type="primary", key="run_room", width="stretch", disabled=running or not st.session_state.get("scenario")):
+    pick.segmented_control(
+        "Scenario", list(SCENARIOS), key="scenario", default=next(iter(SCENARIOS))
+    )
+    if go.button(
+        "Run",
+        type="primary",
+        key="run_room",
+        width="stretch",
+        disabled=running or not st.session_state.get("scenario"),
+    ):
         try:
             room = Room(ui.get_model(), SCENARIOS[st.session_state["scenario"]])
             room.scenario_label = st.session_state["scenario"].split(" · ")[0]
@@ -295,12 +399,33 @@ with resume_tab:
     live("room", room_view)
 
 with demo_tab:
-    st.caption("Two workers take incidents from one queue. No model: the question is where the state lives.")
+    st.caption(
+        "Two workers take incidents from one queue. No model: the question is where the state lives."
+    )
     pick, crash, go = st.columns([4, 1, 1], vertical_alignment="bottom")
-    pick.segmented_control("State", ["In each worker's memory", "Shared, with a lease"], key="state", default="In each worker's memory")
+    pick.segmented_control(
+        "State",
+        ["In each worker's memory", "Shared, with a lease"],
+        key="state",
+        default="In each worker's memory",
+    )
     crash.toggle("Worker 1 crashes", key="crash")
-    if go.button("Run", type="primary", key="run_fleet", width="stretch", disabled=running or not st.session_state.get("state")):
-        start("fleet", Fleet("memory" if st.session_state["state"].startswith("In each") else "shared", crash=st.session_state.get("crash", False)))
+    if go.button(
+        "Run",
+        type="primary",
+        key="run_fleet",
+        width="stretch",
+        disabled=running or not st.session_state.get("state"),
+    ):
+        start(
+            "fleet",
+            Fleet(
+                "memory"
+                if st.session_state["state"].startswith("In each")
+                else "shared",
+                crash=st.session_state.get("crash", False),
+            ),
+        )
     live("fleet", fleet_view)
 
 if st.session_state.get("runs"):

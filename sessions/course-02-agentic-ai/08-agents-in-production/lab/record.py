@@ -19,9 +19,18 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 S7 = HERE.parents[1] / "07-multi-agent" / "lab"
-KEEP = ("gen_ai.operation.name", "gen_ai.agent.name", "gen_ai.request.model", "gen_ai.usage.input_tokens",
-        "gen_ai.usage.output_tokens", "gen_ai.tool.name", "gen_ai.tool.call.arguments", "gen_ai.tool.call.result",
-        "gen_ai.output.messages", "final_result")
+KEEP = (
+    "gen_ai.operation.name",
+    "gen_ai.agent.name",
+    "gen_ai.request.model",
+    "gen_ai.usage.input_tokens",
+    "gen_ai.usage.output_tokens",
+    "gen_ai.tool.name",
+    "gen_ai.tool.call.arguments",
+    "gen_ai.tool.call.result",
+    "gen_ai.output.messages",
+    "final_result",
+)
 LONG = 400  # characters kept of a long attribute
 
 
@@ -53,10 +62,16 @@ def setup():
 
 
 async def run(team, tracer, model, incident: str, pattern: str) -> Any:
-    patterns = {"runbook": team.runbook, "pipeline": team.students_pipeline, "orchestrator": team.students_orchestrator}
+    patterns = {
+        "runbook": team.runbook,
+        "pipeline": team.students_pipeline,
+        "orchestrator": team.students_orchestrator,
+    }
     from world import INCIDENTS
 
-    room = team.Team(model, next(name for name in INCIDENTS if name.startswith(incident)))
+    room = team.Team(
+        model, next(name for name in INCIDENTS if name.startswith(incident))
+    )
     if pattern == "orchestrator":
         load = team.load_starter
 
@@ -96,33 +111,63 @@ def spans(exporter, model_label: str | None = None) -> list[dict[str, Any]]:
                 text = value if isinstance(value, (int, float, bool)) else str(value)
                 attributes[key] = text[:LONG] if isinstance(text, str) else text
         name = span.name
-        if model_label and str(attributes.get("gen_ai.request.model", "")).startswith("function"):
+        if model_label and str(attributes.get("gen_ai.request.model", "")).startswith(
+            "function"
+        ):
             attributes["gen_ai.request.model"] = model_label
             name = f"chat {model_label}"
-        out.append({"name": name, "trace_id": f"{span.context.trace_id:032x}", "span_id": f"{span.context.span_id:016x}",
-                    "parent_id": f"{span.parent.span_id:016x}" if span.parent else None,
-                    "start_ms": round((span.start_time - start) / 1e6, 1), "end_ms": round((span.end_time - start) / 1e6, 1),
-                    "status": span.status.status_code.name, "error": span.status.description, "attributes": attributes})
+        out.append(
+            {
+                "name": name,
+                "trace_id": f"{span.context.trace_id:032x}",
+                "span_id": f"{span.context.span_id:016x}",
+                "parent_id": f"{span.parent.span_id:016x}" if span.parent else None,
+                "start_ms": round((span.start_time - start) / 1e6, 1),
+                "end_ms": round((span.end_time - start) / 1e6, 1),
+                "status": span.status.status_code.name,
+                "error": span.status.description,
+                "attributes": attributes,
+            }
+        )
     return out
 
 
-def record(model, incident: str, pattern: str, title: str, source: str, model_label: str | None = None) -> dict[str, Any]:
+def record(
+    model,
+    incident: str,
+    pattern: str,
+    title: str,
+    source: str,
+    model_label: str | None = None,
+) -> dict[str, Any]:
     team, exporter, tracer = setup()
     began = time.time()
     asyncio.run(run(team, tracer, model, incident, pattern))
-    return {"title": title, "source": source, "recorded_at": time.strftime("%Y-%m-%d %H:%M", time.localtime(began)),
-            "spans": spans(exporter, model_label)}
+    return {
+        "title": title,
+        "source": source,
+        "recorded_at": time.strftime("%Y-%m-%d %H:%M", time.localtime(began)),
+        "spans": spans(exporter, model_label),
+    }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True)
     parser.add_argument("--incident", default="INC-2")
-    parser.add_argument("--pattern", default="pipeline", choices=["runbook", "pipeline", "orchestrator"])
+    parser.add_argument(
+        "--pattern", default="pipeline", choices=["runbook", "pipeline", "orchestrator"]
+    )
     args = parser.parse_args()
     from meridian.agent_runtime import default_model
 
-    trace = record(default_model(), args.incident, args.pattern, f"Live run · {args.incident} · {args.pattern}", "a live run with the real model")
+    trace = record(
+        default_model(),
+        args.incident,
+        args.pattern,
+        f"Live run · {args.incident} · {args.pattern}",
+        "a live run with the real model",
+    )
     Path(args.out).write_text(json.dumps(trace, indent=1), encoding="utf-8")
 
 

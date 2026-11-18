@@ -47,9 +47,24 @@ STYLE = """
 </style>
 """
 
-LABELS = {"idle": "Waiting", "working": "Working", "waiting": "Needs approval", "done": "Done", "error": "Error", "unused": "Not used"}
-TAGS = {"tool": "TOOL", "action": "ACTION", "approval": "APPROVAL?", "approved": "APPROVED", "rejected": "REJECTED",
-        "checkpoint": "CHECKPOINT", "note": "YOUR CODE", "crash": "CRASH"}
+LABELS = {
+    "idle": "Waiting",
+    "working": "Working",
+    "waiting": "Needs approval",
+    "done": "Done",
+    "error": "Error",
+    "unused": "Not used",
+}
+TAGS = {
+    "tool": "TOOL",
+    "action": "ACTION",
+    "approval": "APPROVAL?",
+    "approved": "APPROVED",
+    "rejected": "REJECTED",
+    "checkpoint": "CHECKPOINT",
+    "note": "YOUR CODE",
+    "crash": "CRASH",
+}
 
 
 def cards(items: list[dict[str, Any]]) -> None:
@@ -64,17 +79,32 @@ def cards(items: list[dict[str, Any]]) -> None:
     st.html(STYLE + f'<div class="mb-row">{"".join(html)}</div>')
 
 
-def feed(messages: list[dict[str, str]], names: dict[str, str] | None = None, limit: int = 400) -> None:
+def feed(
+    messages: list[dict[str, str]],
+    names: dict[str, str] | None = None,
+    limit: int = 400,
+) -> None:
     names = names or {}
     rows = []
     for message in messages:
         kind = message.get("kind", "message")
-        tag = f'<span class="mb-k mb-{kind}">{TAGS[kind]}</span>' if kind in TAGS else ""
-        who = f'{escape(names.get(message["from"], message["from"]))} → {escape(names.get(message["to"], message["to"]))}'
-        text = message["text"] if len(message["text"]) <= limit else message["text"][:limit] + "…"
-        rows.append(f'<div class="mb-msg mb-row-{kind}"><span class="mb-t">{escape(message["time"][-5:])}</span><span class="mb-w">{who}</span>'
-                    f'<span class="mb-x">{tag}{escape(text)}</span></div>')
-    st.html(STYLE + f'<div class="mb-feed">{"".join(rows) or "<div class=mb-msg>No messages yet.</div>"}</div>')
+        tag = (
+            f'<span class="mb-k mb-{kind}">{TAGS[kind]}</span>' if kind in TAGS else ""
+        )
+        who = f"{escape(names.get(message['from'], message['from']))} → {escape(names.get(message['to'], message['to']))}"
+        text = (
+            message["text"]
+            if len(message["text"]) <= limit
+            else message["text"][:limit] + "…"
+        )
+        rows.append(
+            f'<div class="mb-msg mb-row-{kind}"><span class="mb-t">{escape(message["time"][-5:])}</span><span class="mb-w">{who}</span>'
+            f'<span class="mb-x">{tag}{escape(text)}</span></div>'
+        )
+    st.html(
+        STYLE
+        + f'<div class="mb-feed">{"".join(rows) or "<div class=mb-msg>No messages yet.</div>"}</div>'
+    )
 
 
 def as_text(messages: list[dict[str, str]], names: dict[str, str] | None = None) -> str:
@@ -82,7 +112,9 @@ def as_text(messages: list[dict[str, str]], names: dict[str, str] | None = None)
     names = names or {}
     lines = []
     for message in messages:
-        tag = f"[{TAGS[message.get('kind', '')]}] " if message.get("kind") in TAGS else ""
+        tag = (
+            f"[{TAGS[message.get('kind', '')]}] " if message.get("kind") in TAGS else ""
+        )
         who = f"{names.get(message['from'], message['from'])} → {names.get(message['to'], message['to'])}"
         lines.append(f"{message['time'][-5:]}  {who}: {tag}{message['text']}")
     return "\n".join(lines)
@@ -92,7 +124,8 @@ def copy_button(text: str, label: str = "Copy log") -> None:
     """A small button that copies `text` to the clipboard."""
     # The log holds model output: escape '</' so nothing in it can close the <script> tag.
     data = json.dumps(text).replace("</", "<\\/")
-    st.iframe(f"""
+    st.iframe(
+        f"""
 <button id="b" style="float:right;font:13px 'Source Sans Pro',sans-serif;color:#374151;background:#fff;border:1px solid #d1d5db;
 border-radius:8px;padding:5px 12px;cursor:pointer">&#x2398; {label}</button>
 <script>
@@ -106,7 +139,9 @@ button.onclick = async () => {{
   }}
   button.innerHTML = "&#x2713; Copied"; setTimeout(() => button.innerHTML = "&#x2398; {label}", 1500);
 }};
-</script>""", height=38)
+</script>""",
+        height=38,
+    )
 
 
 WATERFALL = """
@@ -129,12 +164,19 @@ WATERFALL = """
 def waterfall(rows: list[dict[str, Any]]) -> None:
     """Spans as a waterfall. rows: label, depth, start, end, kind, detail (tooltip), error."""
     total = max((r["end"] for r in rows), default=1) or 1
-    html = ['<div class="wf-legend"><span class="a">agent</span><span class="c">model call</span><span class="t">tool call</span></div><div class="wf">']
+    html = [
+        '<div class="wf-legend"><span class="a">agent</span><span class="c">model call</span><span class="t">tool call</span></div><div class="wf">'
+    ]
     for r in rows:
-        left, width = 100 * r["start"] / total, max(100 * (r["end"] - r["start"]) / total, 0.3)
+        left, width = (
+            100 * r["start"] / total,
+            max(100 * (r["end"] - r["start"]) / total, 0.3),
+        )
         css = f"wf-row{' wf-error' if r.get('error') else ''}{' wf-agent' if r['kind'] == 'invoke_agent' else ''}"
-        html.append(f'<div class="{css}" title="{escape(r.get("detail", ""))}"><div class="wf-l" style="padding-left:{14 * r["depth"]}px">'
-                    f'{escape(r["label"])}</div><div class="wf-t"><div class="wf-b wf-{escape(r["kind"])}" '
-                    f'style="left:{left:.2f}%;width:{width:.2f}%"></div></div></div>')
+        html.append(
+            f'<div class="{css}" title="{escape(r.get("detail", ""))}"><div class="wf-l" style="padding-left:{14 * r["depth"]}px">'
+            f'{escape(r["label"])}</div><div class="wf-t"><div class="wf-b wf-{escape(r["kind"])}" '
+            f'style="left:{left:.2f}%;width:{width:.2f}%"></div></div></div>'
+        )
     html.append("</div>")
     st.html(WATERFALL + "".join(html))

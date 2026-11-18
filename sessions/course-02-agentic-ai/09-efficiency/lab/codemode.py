@@ -24,19 +24,51 @@ from pydantic_ai import Agent
 from meridian.simulator import Simulator
 from meridian.tools import MeridianTools
 
-TASK = ("Check the health of Meridian Exchange now: the latency and error rate of every component "
-        "(order-gateway, matching-engine, market-data, settlement, reference-db), and every link from order-gateway "
-        "to the other four. Then list what is unhealthy, with the numbers.")
-COMPONENTS = ["order-gateway", "matching-engine", "market-data", "settlement", "reference-db"]
-SAFE = ("print", "len", "range", "sorted", "min", "max", "sum", "round", "dict", "list", "str", "int", "float",
-        "enumerate", "zip", "abs", "any", "all", "isinstance", "set", "tuple", "bool")
+TASK = (
+    "Check the health of Meridian Exchange now: the latency and error rate of every component "
+    "(order-gateway, matching-engine, market-data, settlement, reference-db), and every link from order-gateway "
+    "to the other four. Then list what is unhealthy, with the numbers."
+)
+COMPONENTS = [
+    "order-gateway",
+    "matching-engine",
+    "market-data",
+    "settlement",
+    "reference-db",
+]
+SAFE = (
+    "print",
+    "len",
+    "range",
+    "sorted",
+    "min",
+    "max",
+    "sum",
+    "round",
+    "dict",
+    "list",
+    "str",
+    "int",
+    "float",
+    "enumerate",
+    "zip",
+    "abs",
+    "any",
+    "all",
+    "isinstance",
+    "set",
+    "tuple",
+    "bool",
+)
 TIMEOUT = 5.0
 MAX_OUTPUT = 4000
 
 
 class Systems:
     def __init__(self) -> None:
-        self.tools = MeridianTools(Simulator(HERE / "incidents" / "incident.yaml"), actor="demo")
+        self.tools = MeridianTools(
+            Simulator(HERE / "incidents" / "incident.yaml"), actor="demo"
+        )
         self.lock = threading.Lock()
 
     def read_metrics(self, component: str) -> dict[str, Any]:
@@ -46,7 +78,11 @@ class Systems:
         if "error" in readings:
             return readings
         last = readings["readings"][-1]
-        return {"component": component, "latency_ms": last["latency_ms"], "error_rate": last["error_rate"]}
+        return {
+            "component": component,
+            "latency_ms": last["latency_ms"],
+            "error_rate": last["error_rate"],
+        }
 
     def check_link(self, source: str, target: str) -> dict[str, Any]:
         """State of a link: up, degraded or down."""
@@ -58,8 +94,11 @@ def sandbox(code: str, systems: Systems) -> str:
     """Run the agent's script with only the tool functions and a few builtins."""
     import builtins
 
-    scope = {"__builtins__": {name: getattr(builtins, name) for name in SAFE},
-             "read_metrics": systems.read_metrics, "check_link": systems.check_link}
+    scope = {
+        "__builtins__": {name: getattr(builtins, name) for name in SAFE},
+        "read_metrics": systems.read_metrics,
+        "check_link": systems.check_link,
+    }
     out, box = io.StringIO(), {}
 
     def run() -> None:
@@ -103,8 +142,12 @@ class Duel:
     async def _main(self) -> None:
         model = patient(self.model)
         systems = Systems()
-        tools_agent = Agent(model, name="tools", instructions="You check the health of a stock exchange with your tools.",
-                            tools=[systems.read_metrics, systems.check_link])
+        tools_agent = Agent(
+            model,
+            name="tools",
+            instructions="You check the health of a stock exchange with your tools.",
+            tools=[systems.read_metrics, systems.check_link],
+        )
 
         def run_python(code: str) -> str:
             """Run a Python script. It can call read_metrics(component) and check_link(source, target), and must print
@@ -112,20 +155,32 @@ class Duel:
             self.scripts.append(code)
             return sandbox(code, systems)
 
-        code_agent = Agent(model, name="code", tools=[run_python],
-                           instructions=("You check the health of a stock exchange. Write ONE Python script that calls the "
-                                         "functions read_metrics(component) and check_link(source, target) for everything you need, "
-                                         "and prints only a compact summary. Run it with run_python, then answer."))
-        for name, agent in (("Tools, one by one", tools_agent), ("Code mode", code_agent)):
+        code_agent = Agent(
+            model,
+            name="code",
+            tools=[run_python],
+            instructions=(
+                "You check the health of a stock exchange. Write ONE Python script that calls the "
+                "functions read_metrics(component) and check_link(source, target) for everything you need, "
+                "and prints only a compact summary. Run it with run_python, then answer."
+            ),
+        )
+        for name, agent in (
+            ("Tools, one by one", tools_agent),
+            ("Code mode", code_agent),
+        ):
             began = time.monotonic()
             result = await agent.run(TASK)
             usage = result.usage
-            self.results[name] = {"Model calls": usage.requests, "Tool calls": usage.tool_calls,
-                                  "Tokens": (usage.input_tokens or 0) + (usage.output_tokens or 0),
-                                  "Seconds": round(time.monotonic() - began, 1), "answer": str(result.output)}
+            self.results[name] = {
+                "Model calls": usage.requests,
+                "Tool calls": usage.tool_calls,
+                "Tokens": (usage.input_tokens or 0) + (usage.output_tokens or 0),
+                "Seconds": round(time.monotonic() - began, 1),
+                "answer": str(result.output),
+            }
 
 
 def blocked_example(systems: Systems | None = None) -> str:
     """What the sandbox says to a script that tries to leave it."""
     return sandbox("import os\nprint(os.listdir('/'))", systems or Systems())
-
