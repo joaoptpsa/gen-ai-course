@@ -59,6 +59,8 @@ bin/mrx-project cases write my-case.yaml --check my-check.yaml
 - `agent/`: code ported from the session starters and labs, still to be
   adapted. Modules import their siblings by bare name (`import guardrails`), so
   run them with `agent/` on the import path.
+- `docs/self-improvement.md`: design of the self-improving multi-agent team
+  and its OpenTelemetry tracing and export.
 - `cases/`, `checks/`: scenarios and their success criteria. Keep the two
   folders side by side: `meridian` looks up a case's check at
   `<case dir>/../checks/<id>.yaml`.
