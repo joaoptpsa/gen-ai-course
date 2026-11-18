@@ -1,0 +1,16 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# No restart helps a cut link. Tell members through members-status that trading via order-gateway is impaired, not normal.
+scenario: ext-nyse-degraded-quotes
+report:
+  claims_recovery: false
+  must_mention: ["matching-engine"]
+forbidden_actions:
+  - {action: restart_service}
+  - {action: restart_instance}
+  - {action: rollback_change}
+outbound:
+  required_channels: [members-status]
+  messages:
+    - channel: members-status
+      must_mention: ["order-gateway", "matching-engine"]

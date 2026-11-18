@@ -1,0 +1,15 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# Settlement halted itself on inconsistent data: no restart to force it on, and the report holds and escalates.
+scenario: ext-euroclear-settlement-halt
+report:
+  claims_recovery: false
+  must_mention: ["discrepancy"]
+required_reads:
+  - {tool: read_logs, component: settlement}
+forbidden_actions:
+  - {action: restart_service, target: settlement}
+  - {action: restart_instance, target: settlement-1}
+  - {action: rollback_change}
+outbound:
+  required_channels: [members-status]

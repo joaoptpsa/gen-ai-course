@@ -1,0 +1,30 @@
+# Adapted from Fastly, 8 June 2021 (cases/SOURCES.md).
+# Kept: a valid configuration change triggers a latent bug from an earlier deploy; the change is
+# rolled back and nothing is restarted. Dropped: customers and the network share.
+id: ext-fastly-latent-bug
+title: A valid config change triggers a latent bug
+seed: 1025
+date: "2026-06-08"
+start_time: "09:55"
+warmup_ticks: 12
+background_log_lines: 4
+incident:
+  id: INC-E125
+  summary: "Most requests to order-gateway are failing with internal errors. Started a few minutes ago."
+  alert: error_rate_high/order-gateway
+changes:
+  - change_id: CHG-5500
+    component: order-gateway
+    kind: deploy
+    description: "Deploy order-gateway software update (rolled out four weeks ago)"
+    at: -40000
+  - change_id: CHG-5501
+    component: order-gateway
+    kind: config
+    description: "Customer configuration update (valid, passed validation)"
+    at: 4
+faults:
+  - {type: change, at: 4, change_id: CHG-5501, effects: [{component: order-gateway, error_rate: 0.85, reason: "unexpected state in request handling"}]}
+logs:
+  - {at: 5, component: order-gateway, instance: order-gateway-1, level: ERROR, message: "ERROR request handler fault after configuration CHG-5501 was applied"}
+  - {at: 5, component: order-gateway, instance: order-gateway-2, level: ERROR, message: "ERROR request handler fault after configuration CHG-5501 was applied"}

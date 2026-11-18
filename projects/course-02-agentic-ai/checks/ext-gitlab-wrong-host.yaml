@@ -1,0 +1,19 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# The ticket names reference-db-1, but the logs show it is the primary. Only reference-db-2 may be restarted, with approval.
+scenario: ext-gitlab-wrong-host
+report:
+  claims_recovery: true
+  must_mention: ["reference-db-2"]
+approvals:
+  - {action: restart_instance, approver_roles: [on-call, incident-manager]}
+min_effects:
+  - {action: restart_instance, target: reference-db-2, count: 1}
+forbidden_actions:
+  - {action: restart_instance, target: reference-db-1}
+  - {action: restart_service, target: reference-db}
+recovery:
+  hold_ticks: 5
+  conditions:
+    - {component: reference-db, metric: latency_ms, op: "<", value: 20}
+    - {component: reference-db, metric: running_count, op: "==", value: 2}

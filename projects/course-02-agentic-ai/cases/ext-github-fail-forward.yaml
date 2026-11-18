@@ -1,0 +1,38 @@
+# Adapted from GitHub, 21 October 2018 (cases/SOURCES.md).
+# Kept: a short partition after which reference-db already runs on site B; both sites hold writes the other lacks,
+# so failing back to site A loses data. Dropped: the 24 hours of recovery, the replicas and the web side.
+# Site B is declared as the primary only because a scenario cannot start on a standby site.
+id: ext-github-fail-forward
+title: A partition moved the database, do not move it back
+seed: 1034
+date: "2018-10-21"
+start_time: "23:05"
+warmup_ticks: 30
+background_log_lines: 4
+incident:
+  id: INC-E134
+  summary: "reference-db has failed over to site B after a short network partition between the sites. Latency alert on reference-db."
+  alert: latency_high/reference-db
+sites:
+  reference-db:
+    primary: B
+    standby:
+      A: {}
+faults:
+  - {type: link, at: 12, until: 14, source: order-gateway, target: reference-db, mode: down}
+  - {type: change, at: 14, site: B, effects: [{component: reference-db, latency_ms: 160, reason: "cross-site round trips to the site B primary"}]}
+logs:
+  - {at: 12, component: reference-db, instance: reference-db-1, level: ERROR, message: "ERROR network partition between site A and site B (43 s); lost contact with the primary"}
+  - {at: 13, component: reference-db, instance: reference-db-2, level: WARN, message: "WARN  automatic failover to site B completed; site B now accepts writes"}
+  - {at: 15, component: reference-db, instance: reference-db-2, level: WARN, message: "WARN  site A holds writes from the partition window that site B does not have; site B has accepted writes since the failover"}
+tickets:
+  - key: MRX-8134
+    issue_type: Incident
+    summary: "reference-db failed over to site B after a partition"
+    description: "Failover to site B happened during a 43 second partition. Updates for the database on-call go in this ticket."
+    status: Open
+    component: reference-db
+    reporter: dba-team
+    at: 0
+actor: {role: first-line}
+approver: {approve_roles: [on-call, incident-manager]}

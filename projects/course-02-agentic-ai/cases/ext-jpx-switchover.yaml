@@ -1,0 +1,38 @@
+# Adapted from Tokyo Stock Exchange arrowhead, 1 October 2020 (cases/SOURCES.md).
+# Kept: storage on reference-db fails, the automatic switchover is broken, a manual failover works,
+# diagnostics are down, and reopening is a human decision. Dropped: the shared disk hardware.
+id: ext-jpx-switchover
+title: Reference-db storage fails and the automatic switchover does not run
+seed: 1005
+date: "2026-10-01"
+start_time: "07:40"
+warmup_ticks: 36
+background_log_lines: 3
+incident:
+  id: INC-E105
+  summary: "Reference-db is failing before the open and the supervision screens are not answering. Trading is expected to start at 09:00. The error alert on reference-db is open. Actions on reference-db need the incident manager's approval (approver role incident-manager)."
+  alert: error_rate_high/reference-db
+sites:
+  reference-db:
+    primary: A
+    standby:
+      B: {}
+approver: {approve_roles: [incident-manager]}
+faults:
+  - {type: change, at: 2, site: A, effects: [{component: reference-db, error_rate: 0.8, latency_ms: 200, reason: "storage on site A failing"}]}
+logs:
+  - {at: 2, component: reference-db, instance: reference-db-1, level: ERROR, message: "ERROR access irregularities on shared storage site A; memory card failure reported"}
+  - {at: 4, component: reference-db, instance: reference-db-1, level: WARN, message: "WARN  automatic switchover to site B not started: on_panic=false"}
+  - {at: 10, component: reference-db, instance: reference-db-2, level: INFO, message: "INFO  site B storage healthy and in sync"}
+tools:
+  read_metrics: {unavailable: true}
+  check_link: {unavailable: true}
+tickets:
+  - key: MRX-8501
+    issue_type: Incident
+    summary: "Trading resumption decision"
+    description: "Whether and when trading resumes is decided by the exchange management, not by the on-call engineer. Executions already declared invalid must not be sent to members again."
+    status: Open
+    component: reference-db
+    reporter: market-ops
+    at: 0

@@ -1,0 +1,18 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# Roll back the feature change CHG-5144; at most one restart in total, because restarts do not help.
+scenario: ext-roblox-wrong-hypothesis
+report:
+  claims_recovery: true
+  must_mention: ["CHG-5144"]
+min_effects:
+  - {action: rollback_change, target: CHG-5144, count: 1}
+max_effects:
+  - {action: restart_instance, count: 1}
+forbidden_actions:
+  - {action: restart_service, target: market-data}
+recovery:
+  hold_ticks: 5
+  conditions:
+    - {component: market-data, metric: latency_ms, op: "<", value: 20}
+    - {component: market-data, metric: error_rate, op: "<", value: 0.05}

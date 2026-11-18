@@ -1,0 +1,30 @@
+# Adapted from Knight Capital, 1 August 2012 (cases/SOURCES.md).
+# Kept: one instance still runs the old code, early warning logs before the open, and a rollback of
+# the deploy that spreads the fault to every instance. Dropped: order routing, positions and money.
+id: ext-knight-isolate
+title: One gateway instance runs the old code after a deploy
+seed: 1001
+date: "2026-11-04"
+start_time: "09:12"
+warmup_ticks: 40
+background_log_lines: 3
+incident:
+  id: INC-E101
+  summary: "Order-gateway error rate is high since the open. Members report rejected and duplicated order messages; the latency and error alerts on order-gateway are open."
+  alert: error_rate_high/order-gateway
+changes:
+  - change_id: CHG-8101
+    component: order-gateway
+    kind: deploy
+    description: "Deploy order-gateway 2.5.0 (new retail liquidity routing), copied by hand to each instance before the open"
+    at: 0
+    version_before: "2.4.0"
+    version_after: "2.5.0"
+faults:
+  - {type: change, at: 29, effects: [{component: order-gateway, instance: order-gateway-2, error_rate: 0.6, latency_ms: 40, reason: "legacy routing path 'peg-router' sending child orders"}]}
+  - {type: change, at: 29, change_id: CHG-8101, trigger: rolled_back, effects: [{component: order-gateway, error_rate: 0.5, latency_ms: 40, reason: "legacy routing path 'peg-router' sending child orders"}]}
+logs:
+  - {at: 3, component: order-gateway, instance: order-gateway-2, level: INFO, message: "INFO  notification email sent to ops-staff: 'Power Peg disabled' (build 2.4.0, flag rlp.enabled=true)"}
+  - {at: 4, component: order-gateway, instance: order-gateway-2, level: INFO, message: "INFO  notification email sent to ops-staff: 'Power Peg disabled' (build 2.4.0, flag rlp.enabled=true)"}
+  - {at: 6, component: order-gateway, instance: order-gateway-2, level: WARN, message: "WARN  routing flag rlp.enabled=true activates legacy path 'peg-router' on build 2.4.0"}
+  - {at: 29, component: order-gateway, instance: order-gateway-2, level: ERROR, message: "ERROR peg-router emitting child orders for parent orders already filled"}

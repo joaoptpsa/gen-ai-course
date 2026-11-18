@@ -1,0 +1,35 @@
+# Adapted from Nasdaq UTP SIP, 22 August 2013 (cases/SOURCES.md).
+# Kept: a flapping upstream overloads market-data, the standby failover is refused, and reopening is a
+# human decision. Dropped: quote volumes as numbers; the flapping source is one market-data instance.
+id: ext-nasdaq-sip-overload
+title: Market data overloaded by a flapping feed, failover refused
+seed: 1002
+date: "2026-08-20"
+start_time: "12:10"
+warmup_ticks: 20
+background_log_lines: 3
+incident:
+  id: INC-E102
+  summary: "Market-data is overloaded and the consolidated feed is stale. Trading in all symbols is halted. The error alert on market-data is open."
+  alert: error_rate_high/market-data
+sites:
+  market-data:
+    primary: A
+    standby:
+      B: {fails: true, reason: "latent flaw in the failover code prevents a clean switchover"}
+faults:
+  - {type: change, at: 5, effects: [{component: market-data, instance: market-data-1, error_rate: 0.7, latency_ms: 300, reason: "upstream feed session flapping"}]}
+logs:
+  - {at: 5, component: market-data, instance: market-data-1, level: WARN, message: "WARN  NYSE-Arca feed session disconnected and reconnected (sequence 21 in 10 minutes)"}
+  - {at: 7, component: market-data, instance: market-data-1, level: WARN, message: "WARN  quote updates on the NYSE-Arca port at 2.6x the tested port limit"}
+  - {at: 9, component: market-data, instance: market-data-1, level: ERROR, message: "ERROR port input queue saturated; dropping updates"}
+  - {at: 12, component: market-data, instance: market-data-2, level: INFO, message: "INFO  standby site B failover is armed but not verified under this load"}
+tickets:
+  - key: MRX-8302
+    issue_type: Incident
+    summary: "Market-data halt: reopening decision"
+    description: "Trading was halted at 12:00. Reopening is decided by the feed operating committee together with the members, not by the on-call engineer. The committee asks to be told when the feed is stable."
+    status: In Progress
+    component: market-data
+    reporter: market-ops
+    at: 0

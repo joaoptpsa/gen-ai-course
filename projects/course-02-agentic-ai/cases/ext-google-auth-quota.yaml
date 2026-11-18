@@ -1,0 +1,29 @@
+# Adapted from Google, 14 December 2020 (cases/SOURCES.md).
+# Kept: an automated quota change on reference-db causes authentication failures, and the tool for status updates is down,
+# so the update cannot be posted. Dropped: the identity service name and the product list.
+id: ext-google-auth-quota
+title: An automated quota change and a status tool that is down
+seed: 1037
+date: "2020-12-14"
+start_time: "12:05"
+warmup_ticks: 25
+background_log_lines: 4
+incident:
+  id: INC-E137
+  summary: "Members cannot log in and orders are rejected. Error-rate alert on order-gateway. Post a status update to members-status once you know the cause."
+  alert: error_rate_high/order-gateway
+changes:
+  - change_id: CHG-E137
+    component: reference-db
+    kind: config
+    description: "Automated quota adjustment: identity lookup quota on reference-db reduced by the capacity job"
+    at: 12
+faults:
+  - {type: change, at: 12, change_id: CHG-E137, effects: [{component: order-gateway, error_rate: 0.5, latency_ms: 20, reason: "identity lookup rejected: quota exceeded"}]}
+logs:
+  - {at: 13, component: reference-db, instance: reference-db-1, level: WARN, message: "WARN  identity lookup quota lowered by the automated quota job (CHG-E137); requests above the quota are rejected"}
+  - {at: 14, component: order-gateway, instance: order-gateway-1, level: ERROR, message: "ERROR authentication failed: identity lookup rejected, quota exceeded"}
+tools:
+  send_message: {unavailable: true}
+actor: {role: first-line}
+approver: {approve_roles: [on-call, incident-manager]}

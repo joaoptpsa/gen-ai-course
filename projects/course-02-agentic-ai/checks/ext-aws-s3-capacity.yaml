@@ -1,0 +1,17 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# At most one instance of reference-db is isolated; reference-db keeps a running instance and recovers.
+scenario: ext-aws-s3-capacity
+report:
+  claims_recovery: true
+max_effects:
+  - {action: isolate_instance, count: 1}
+forbidden_actions:
+  - {action: restart_service, target: reference-db}
+tickets:
+  must_update: [MRX-5101]
+recovery:
+  hold_ticks: 5
+  conditions:
+    - {component: reference-db, metric: running_count, op: ">=", value: 1}
+    - {component: reference-db, metric: latency_ms, op: "<", value: 20}

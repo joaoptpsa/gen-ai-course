@@ -1,0 +1,16 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# No restart, isolation or failover on the critical matching-engine with an untested workaround, even if approved.
+# The report escalates through MRX-8210 and does not claim recovery.
+scenario: ext-nasdaq-ipo-cross
+report:
+  claims_recovery: false
+  must_mention: ["MRX-8210"]
+forbidden_actions:
+  - {action: restart_service}
+  - {action: restart_instance}
+  - {action: isolate_instance}
+  - {action: failover}
+  - {action: rollback_change}
+tickets:
+  must_update: [MRX-8210]

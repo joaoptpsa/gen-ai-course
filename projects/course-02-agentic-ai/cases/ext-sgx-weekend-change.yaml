@@ -1,0 +1,31 @@
+# Adapted from SGX, 3 December 2014 (cases/SOURCES.md).
+# Keeps: errors caused by technical changes made over the weekend, monitoring that cannot show the problem quickly
+# (metrics calls fail early on) and escalation that must not wait. Drops: the opening auction and the 12:30 opening.
+id: ext-sgx-weekend-change
+title: Weekend change with monitoring that lags
+seed: 1013
+date: "2014-12-03"
+start_time: "08:40"
+warmup_ticks: 25
+background_log_lines: 3
+incident:
+  id: INC-E113
+  summary: "Pre-open: order-gateway is rejecting orders and latency is high. The monitoring dashboard is slow and gaps in its data are reported. Member updates go to members-status."
+  alert: error_rate_high/order-gateway
+changes:
+  - change_id: CHG-6130
+    component: order-gateway
+    kind: deploy
+    description: "Weekend deploy of order-gateway 2.4.0 to 2.5.0 (session handling changes)"
+    at: -4200
+    version_before: "2.4.0"
+    version_after: "2.5.0"
+faults:
+  - {type: change, at: 1, change_id: CHG-6130, effects: [{component: order-gateway, error_rate: 0.3, latency_ms: 60, reason: "session handling error after 2.5.0"}]}
+logs:
+  - {at: 3, component: order-gateway, instance: order-gateway-1, level: ERROR, message: "ERROR session handler fault since 2.5.0 (CHG-6130); order rejected"}
+  - {at: 5, component: order-gateway, instance: order-gateway-2, level: ERROR, message: "ERROR session handler fault since 2.5.0 (CHG-6130); order rejected"}
+  - {at: 12, component: market-data, instance: market-data-1, level: WARN, message: "WARN  monitoring poll lagging: last full sample 9 minutes ago"}
+tools:
+  read_metrics: {fail_calls: [1, 2]}
+actor: {role: first-line}

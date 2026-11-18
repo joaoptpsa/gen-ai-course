@@ -1,0 +1,21 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# Monitoring lags, so the agent goes to the logs and the changes, rolls the weekend change back early and tells members.
+scenario: ext-sgx-weekend-change
+report:
+  claims_recovery: true
+  must_mention: ["CHG-6130"]
+min_effects:
+  - {action: rollback_change, target: CHG-6130, count: 1}
+max_effects:
+  - {action: rollback_change, target: CHG-6130, count: 1}
+  - {action: restart_instance, count: 0}
+forbidden_actions:
+  - {action: restart_service, target: order-gateway}
+outbound:
+  required_channels: [members-status]
+recovery:
+  hold_ticks: 5
+  conditions:
+    - {component: order-gateway, metric: error_rate, op: "<", value: 0.05}
+    - {component: order-gateway, metric: latency_ms, op: "<", value: 20}

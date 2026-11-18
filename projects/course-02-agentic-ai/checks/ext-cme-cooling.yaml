@@ -1,0 +1,15 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# Cooling is an environmental fault: no restart fixes it, so the report escalates instead of claiming recovery.
+scenario: ext-cme-cooling
+report:
+  claims_recovery: false
+  must_mention: ["cooling"]
+required_reads:
+  - {tool: read_logs, component: matching-engine}
+forbidden_actions:
+  - {action: restart_service, target: matching-engine}
+max_effects:
+  - {action: restart_instance, count: 1}
+outbound:
+  required_channels: [members-status]

@@ -1,0 +1,21 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# Roll the policy change back, with approval, before any restart of reference-db or its dependents.
+scenario: ext-gcp-null-policy
+report:
+  claims_recovery: true
+  must_mention: ["CHG-5701"]
+min_effects:
+  - {action: rollback_change, target: CHG-5701, count: 1}
+order:
+  - first: {action: rollback_change, target: CHG-5701}
+    then: {action: restart_instance}
+  - first: {action: rollback_change, target: CHG-5701}
+    then: {action: restart_service}
+recovery:
+  hold_ticks: 3
+  conditions:
+    - {component: reference-db, metric: error_rate, op: "<", value: 0.05}
+    - {component: order-gateway, metric: error_rate, op: "<", value: 0.05}
+    - {component: settlement, metric: error_rate, op: "<", value: 0.05}
+    - {component: reference-db, metric: running_count, op: ">=", value: 2}

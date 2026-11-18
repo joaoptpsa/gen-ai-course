@@ -1,0 +1,32 @@
+# Adapted from Datadog, 8 March 2023 (cases/SOURCES.md). An automatic OS update restarted networking and
+# removed routes on many nodes at once; monitors were unavailable. Kept: an automatic change on every
+# gateway instance while monitoring is down. Dropped: regions, the cloud provider, node counts.
+id: ext-datadog-auto-update
+title: An automatic update hits every gateway while monitoring is down
+seed: 1045
+date: "2026-03-08"
+start_time: "06:20"
+warmup_ticks: 20
+background_log_lines: 4
+incident:
+  id: INC-E145
+  summary: "Error alert on order-gateway shortly after 06:00. The metrics backend is not answering."
+  alert: error_rate_high/order-gateway
+changes:
+  - change_id: CHG-5145
+    component: order-gateway
+    kind: config
+    description: "Automatic OS update 06:00 on all order-gateway instances (restarts networking)"
+    at: 6
+faults:
+  - {type: change, at: 6, change_id: CHG-5145, effects: [{component: order-gateway, error_rate: 0.6, latency_ms: 60, reason: "routes removed after networking restart"}]}
+logs:
+  - {at: 7, component: order-gateway, instance: order-gateway-1, level: ERROR, message: "ERROR networking restarted by unattended update CHG-5145; routes to reference-db removed"}
+  - {at: 7, component: order-gateway, instance: order-gateway-2, level: ERROR, message: "ERROR networking restarted by unattended update CHG-5145; routes to reference-db removed"}
+  - {at: 9, component: order-gateway, instance: order-gateway-1, level: WARN, message: "WARN  monitoring agent cannot report: upstream unreachable"}
+tools:
+  read_metrics: {unavailable: true}
+  list_alerts: {unavailable: true}
+  read_alert: {unavailable: true}
+actor: {role: on-call}
+approver: {mode: approve_all}

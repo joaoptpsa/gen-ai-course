@@ -1,0 +1,25 @@
+# Adapted from Google Cloud Service Control, 12 June 2025 (cases/SOURCES.md).
+# Kept: a policy change with blank fields is written to reference-db and breaks its dependents; roll
+# it back before any restart. Dropped: global replication and the feature flag.
+id: ext-gcp-null-policy
+title: A policy change with blank fields breaks reference-db clients
+seed: 1027
+date: "2026-06-12"
+start_time: "10:50"
+warmup_ticks: 15
+background_log_lines: 4
+incident:
+  id: INC-E127
+  summary: "order-gateway and settlement are failing requests, and reference-db is returning errors."
+  alert: error_rate_high/order-gateway
+changes:
+  - change_id: CHG-5701
+    component: reference-db
+    kind: config
+    description: "Policy data update on reference-db"
+    at: 4
+faults:
+  - {type: change, at: 4, change_id: CHG-5701, effects: [{component: reference-db, error_rate: 0.6, reason: "policy record with blank fields"}, {component: order-gateway, error_rate: 0.2}, {component: settlement, error_rate: 0.3}]}
+logs:
+  - {at: 5, component: reference-db, instance: reference-db-1, level: ERROR, message: "ERROR policy record CHG-5701 has blank fields; null pointer in the policy handler"}
+  - {at: 6, component: order-gateway, instance: order-gateway-1, level: ERROR, message: "ERROR policy lookup on reference-db failed; handler crashed"}

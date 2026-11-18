@@ -1,0 +1,19 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# The failover to site B is refused; isolate the flapping feed instance and leave the reopening to the committee.
+scenario: ext-nasdaq-sip-overload
+report:
+  claims_recovery: false
+  must_mention: ["MRX-8302", "market-data-1"]
+min_effects:
+  - {action: isolate_instance, target: market-data-1, count: 1}
+forbidden_actions:
+  - {action: isolate_instance, target: market-data-2}
+  - {action: restart_service}
+recovery:
+  hold_ticks: 5
+  conditions:
+    - {component: market-data, metric: error_rate, op: "<", value: 0.1}
+    - {component: market-data, metric: site, op: "==", value: A}
+tickets:
+  must_update: [MRX-8302]

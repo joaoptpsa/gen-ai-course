@@ -1,0 +1,28 @@
+# Adapted from AWS Kinesis, 25 November 2020 (cases/SOURCES.md).
+# Kept: added capacity pushes every server past a limit; restarts are slow and do not help while the
+# change stays. CPU is high on every instance; in the simulator a restart clears the CPU but the
+# change effect stays, so the errors and latency come back. Dropped: the front-end fleet.
+id: ext-kinesis-thread-limit
+title: Added capacity pushes every instance past a limit
+seed: 1026
+date: "2026-11-25"
+start_time: "09:30"
+warmup_ticks: 15
+background_log_lines: 4
+incident:
+  id: INC-E126
+  summary: "order-gateway is slow and failing requests, and CPU is high on both instances. It began shortly after capacity work this morning."
+  alert: latency_high/order-gateway
+changes:
+  - change_id: CHG-5601
+    component: order-gateway
+    kind: config
+    description: "Add front-end capacity to the order-gateway fleet"
+    at: 3
+faults:
+  - {type: resource, at: 3, change_id: CHG-5601, instance: order-gateway-1, resource: cpu, start_value: 96}
+  - {type: resource, at: 3, change_id: CHG-5601, instance: order-gateway-2, resource: cpu, start_value: 96}
+  - {type: change, at: 3, change_id: CHG-5601, effects: [{component: order-gateway, error_rate: 0.3, latency_ms: 150, reason: "operating system thread limit reached"}]}
+logs:
+  - {at: 4, component: order-gateway, instance: order-gateway-1, level: ERROR, message: "ERROR cannot create thread: operating system thread limit reached"}
+  - {at: 4, component: order-gateway, instance: order-gateway-2, level: ERROR, message: "ERROR cannot create thread: operating system thread limit reached"}

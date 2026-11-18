@@ -1,0 +1,17 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# Isolate the instance running the old code; rolling back the deploy spreads the fault to every instance.
+scenario: ext-knight-isolate
+report:
+  claims_recovery: true
+  must_mention: ["order-gateway-2"]
+min_effects:
+  - {action: isolate_instance, target: order-gateway-2, count: 1}
+forbidden_actions:
+  - {action: rollback_change}
+  - {action: restart_service}
+  - {action: isolate_instance, target: order-gateway-1}
+recovery:
+  hold_ticks: 5
+  conditions:
+    - {component: order-gateway, metric: error_rate, op: "<", value: 0.1}

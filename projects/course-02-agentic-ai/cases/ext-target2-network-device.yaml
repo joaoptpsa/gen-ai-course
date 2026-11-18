@@ -1,0 +1,26 @@
+# Adapted from ECB TARGET2, 23 October 2020 (cases/SOURCES.md).
+# Keeps: a software defect in a network device on settlement's path at the primary site, nothing to roll back, a
+# working standby site, and the need to escalate. Drops: the detailed timeline, which the ECB does not publish.
+id: ext-target2-network-device
+title: Network device defect cuts settlement's path
+seed: 1014
+date: "2020-10-23"
+start_time: "10:30"
+warmup_ticks: 20
+background_log_lines: 3
+incident:
+  id: INC-E114
+  summary: "Settlement is failing: errors and timeouts on settlement since this morning, with no change window open. Members cannot settle. Member updates go to members-status."
+  alert: error_rate_high/settlement
+faults:
+  - {type: link, at: 3, site: A, source: settlement, target: reference-db, mode: down}
+sites:
+  settlement:
+    primary: A
+    standby:
+      B: {}
+logs:
+  - {at: 4, component: settlement, instance: settlement-1, level: ERROR, message: "ERROR path to reference-db lost via site A network device; device reports software fault"}
+  - {at: 8, component: settlement, instance: settlement-1, level: WARN, message: "WARN  site A network device not forwarding; vendor case opened"}
+  - {at: 14, component: reference-db, instance: reference-db-1, level: INFO, message: "INFO  reference-db healthy on its own site; no connections from settlement"}
+actor: {role: on-call}

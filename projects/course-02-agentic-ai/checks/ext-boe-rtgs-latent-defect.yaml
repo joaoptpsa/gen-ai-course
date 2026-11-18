@@ -1,0 +1,22 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# Roll back the change before restarting settlement, then restart it; escalate the contingency decision.
+scenario: ext-boe-rtgs-latent-defect
+report:
+  claims_recovery: true
+  must_mention: ["CHG-5201"]
+min_effects:
+  - {action: rollback_change, target: CHG-5201, count: 1}
+order:
+  - first: {action: rollback_change, target: CHG-5201}
+    then: {action: restart_instance}
+  - first: {action: rollback_change, target: CHG-5201}
+    then: {action: restart_service}
+outbound:
+  required_channels: [incident-manager]
+  messages:
+    - {channel: incident-manager, must_mention: ["contingency"]}
+recovery:
+  hold_ticks: 3
+  conditions:
+    - {component: settlement, metric: error_rate, op: "<", value: 0.05}

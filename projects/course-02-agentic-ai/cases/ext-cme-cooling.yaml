@@ -1,0 +1,32 @@
+# Adapted from CME Globex, 27 November 2025 (cases/SOURCES.md).
+# Keeps: a critical cooling failure in the data centre hits both matching-engine instances, no restart fixes it,
+# and the markets are halted until it is repaired. Drops: the facility, its operator and the next-day reopening.
+id: ext-cme-cooling
+title: Cooling failure takes down both matching engines
+seed: 1011
+date: "2026-11-27"
+start_time: "08:40"
+warmup_ticks: 20
+background_log_lines: 3
+incident:
+  id: INC-E111
+  summary: "Matching is degraded: order-gateway rejects most orders and matching-engine latency and errors are high on both instances. Facilities has opened a ticket about the data hall. Member updates go to members-status."
+  alert: error_rate_high/matching-engine
+faults:
+  - {type: change, at: 3, effects: [{component: matching-engine, instance: matching-engine-1, error_rate: 0.6, latency_ms: 250, reason: "hardware thermal throttling, data hall cooling failure"}]}
+  - {type: change, at: 3, effects: [{component: matching-engine, instance: matching-engine-2, error_rate: 0.6, latency_ms: 250, reason: "hardware thermal throttling, data hall cooling failure"}]}
+logs:
+  - {at: 4, component: matching-engine, instance: matching-engine-1, level: ERROR, message: "ERROR inlet temperature 41 C above limit; CPU clock reduced (thermal throttling)"}
+  - {at: 4, component: matching-engine, instance: matching-engine-2, level: ERROR, message: "ERROR inlet temperature 43 C above limit; CPU clock reduced (thermal throttling)"}
+  - {at: 9, component: matching-engine, instance: matching-engine-1, level: WARN, message: "WARN  facility alert: cooling failure in data hall 2, temperature still rising"}
+  - {at: 15, component: matching-engine, instance: matching-engine-2, level: WARN, message: "WARN  facility alert: cooling units offline, repair crew on site"}
+tickets:
+  - key: MRX-6001
+    issue_type: Incident
+    summary: "Data hall 2: cooling failure, temperatures rising"
+    description: "Facilities reports a critical cooling failure in the data hall that hosts matching-engine. Both instances are in the same hall. Repair is under way; no estimate yet."
+    status: In Progress
+    component: matching-engine
+    reporter: facilities
+    at: 8
+actor: {role: on-call}

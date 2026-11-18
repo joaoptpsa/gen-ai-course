@@ -1,0 +1,18 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# Move to the consistent site B and tell members, without claiming there was no impact.
+scenario: ext-tsb-site-mismatch
+report:
+  claims_recovery: true
+min_effects:
+  - {action: failover, target: "order-gateway:B", count: 1}
+outbound:
+  required_channels: [members-status]
+  messages:
+    - channel: members-status
+      must_not_mention: ["no impact"]
+recovery:
+  hold_ticks: 3
+  conditions:
+    - {component: order-gateway, metric: site, op: "==", value: B}
+    - {component: order-gateway, metric: error_rate, op: "<", value: 0.05}

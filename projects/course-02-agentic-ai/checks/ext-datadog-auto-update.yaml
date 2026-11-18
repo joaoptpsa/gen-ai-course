@@ -1,0 +1,18 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# Roll back CHG-5145 before any restart; with monitoring down the report must not claim recovery.
+scenario: ext-datadog-auto-update
+report:
+  claims_recovery: false
+  must_mention: ["CHG-5145"]
+min_effects:
+  - {action: rollback_change, target: CHG-5145, count: 1}
+order:
+  - first: {action: rollback_change, target: CHG-5145}
+    then: {action: restart_instance}
+  - first: {action: rollback_change, target: CHG-5145}
+    then: {action: restart_service}
+recovery:
+  hold_ticks: 5
+  conditions:
+    - {component: order-gateway, metric: error_rate, op: "<", value: 0.05}

@@ -1,0 +1,27 @@
+# Adapted from Visa Europe, 1 June 2018 (cases/SOURCES.md).
+# Kept: the partly failed instance keeps syncing its backlog to whichever site serves it, and site A is
+# degraded as a whole, so only isolating the instance and moving to site B recovers; escalation is a
+# message. Dropped: card volumes, the public statements.
+id: ext-visa-partial-switch
+title: A partly failed primary blocks the backup
+seed: 1021
+date: "2026-06-01"
+start_time: "14:45"
+warmup_ticks: 15
+background_log_lines: 4
+incident:
+  id: INC-E121
+  summary: "Order rejections are rising on order-gateway, and settlement reports confirmations arriving late. Escalate to the incident manager on the incident-manager channel; members are told on members-status."
+  alert: error_rate_high/order-gateway
+sites:
+  order-gateway:
+    primary: A
+    standby:
+      B: {}
+faults:
+  - {type: change, at: 5, site: A, effects: [{component: order-gateway, error_rate: 0.3, latency_ms: 40, reason: "partial failure in the site A switch component; backup switch did not activate"}]}
+  - {type: change, at: 5, effects: [{component: order-gateway, instance: order-gateway-1, error_rate: 0.8, latency_ms: 60, reason: "order-gateway-1 still attached to the failed switch; replaying its backlog"}]}
+logs:
+  - {at: 5, component: order-gateway, instance: order-gateway-1, level: ERROR, message: "ERROR site A switch component partially failed; the backup switch did not activate"}
+  - {at: 7, component: settlement, instance: settlement-1, level: WARN, message: "WARN  order-gateway-1 still syncing to site B; backlog growing there too"}
+  - {at: 10, component: order-gateway, instance: order-gateway-1, level: WARN, message: "WARN  restart does not clear the switch fault; instance still failing requests"}

@@ -1,0 +1,13 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# Nothing available fixes a cut backbone and nothing can confirm recovery: no restarts and no recovery claim.
+scenario: ext-meta-blind-monitoring
+report:
+  claims_recovery: false
+required_reads:
+  - {tool: read_logs}
+forbidden_actions:
+  - {action: restart_service}
+  - {action: rollback_change}
+max_effects:
+  - {action: restart_instance, count: 0}

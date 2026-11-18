@@ -1,0 +1,28 @@
+# Adapted from Cloudflare, 17 July 2020 (cases/SOURCES.md).
+# Kept: a one-line routing change degrades a link and pulls traffic onto one instance, which overloads.
+# Dropped: the backbone, the router and the city names.
+id: ext-cloudflare-atlanta
+title: A routing change pulls traffic onto one instance
+seed: 1032
+date: "2020-07-17"
+start_time: "21:20"
+warmup_ticks: 28
+background_log_lines: 4
+incident:
+  id: INC-E132
+  summary: "Order latency is high. Latency alert on order-gateway; one gateway instance is struggling and the site A uplink looks busy."
+  alert: latency_high/order-gateway
+changes:
+  - change_id: CHG-E132
+    component: order-gateway
+    kind: config
+    description: "One-line routing policy change on the site A uplink: accept all announced routes"
+    at: 15
+faults:
+  - {type: link, at: 15, change_id: CHG-E132, source: order-gateway, target: matching-engine, mode: degraded, extra_latency_ms: 120}
+  - {type: resource, at: 15, change_id: CHG-E132, instance: order-gateway-1, resource: cpu, start_value: 96}
+logs:
+  - {at: 16, component: order-gateway, instance: order-gateway-1, level: WARN, message: "WARN  site A uplink carrying about three times the usual traffic since the routing policy change (CHG-E132)"}
+  - {at: 17, component: order-gateway, instance: order-gateway-1, level: WARN, message: "WARN  cpu 96%, request queue growing; matching-engine round trip 125 ms"}
+actor: {role: first-line}
+approver: {approve_roles: [on-call, incident-manager]}

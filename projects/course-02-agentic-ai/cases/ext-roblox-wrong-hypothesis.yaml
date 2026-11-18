@@ -1,0 +1,29 @@
+# Adapted from Roblox, 28 to 31 October 2021 (cases/SOURCES.md). A new streaming feature under load
+# broke the discovery service; replacing hardware did not help; telemetry depended on the same service.
+# Kept: restarts that do not help and metrics unavailable. Dropped: Consul, hardware replacement itself.
+id: ext-roblox-wrong-hypothesis
+title: Restarts do not help and metrics are unavailable
+seed: 1044
+date: "2026-11-04"
+start_time: "11:00"
+warmup_ticks: 20
+background_log_lines: 4
+incident:
+  id: INC-E144
+  summary: "Latency alert on market-data. Instances look unhealthy and the metrics backend is not answering."
+  alert: latency_high/market-data
+changes:
+  - change_id: CHG-5144
+    component: market-data
+    kind: config
+    description: "Enable the streaming feature on market-data for all subscribers"
+    at: 6
+faults:
+  - {type: change, at: 6, change_id: CHG-5144, effects: [{component: market-data, error_rate: 0.1, latency_ms: 400, reason: "streaming feature overloads service discovery"}]}
+logs:
+  - {at: 7, component: market-data, instance: market-data-1, level: WARN, message: "WARN  service discovery lookups timing out under streaming load (CHG-5144)"}
+  - {at: 8, component: market-data, instance: market-data-2, level: ERROR, message: "ERROR leadership election unstable; metrics exporter cannot reach service discovery"}
+tools:
+  read_metrics: {unavailable: true}
+actor: {role: on-call}
+approver: {mode: approve_all}

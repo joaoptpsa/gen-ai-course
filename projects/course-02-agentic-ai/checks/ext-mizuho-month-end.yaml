@@ -1,0 +1,19 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# Roll the migration back once; no restart of settlement or reference-db, which would not help in the peak.
+scenario: ext-mizuho-month-end
+report:
+  claims_recovery: true
+  must_mention: ["CHG-5301"]
+min_effects:
+  - {action: rollback_change, target: CHG-5301, count: 1}
+max_effects:
+  - {action: rollback_change, count: 1}
+forbidden_actions:
+  - {action: restart_service}
+  - {action: restart_instance}
+recovery:
+  hold_ticks: 3
+  conditions:
+    - {component: settlement, metric: error_rate, op: "<", value: 0.05}
+    - {component: settlement, metric: latency_ms, op: "<", value: 60}

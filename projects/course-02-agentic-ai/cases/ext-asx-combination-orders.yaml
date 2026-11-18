@@ -1,0 +1,41 @@
+# Adapted from ASX, 16 November 2020 (cases/SOURCES.md).
+# Keeps: a weekend upgrade of the matching engine breaks combination orders and market data is missing, delayed or
+# duplicated; the fix is a rollback, and the member message says trades stand and combination orders are disabled.
+# Drops: the Enquire state, the bait order and the order book rebuild.
+id: ext-asx-combination-orders
+title: Weekend upgrade corrupts combination orders and market data
+seed: 1012
+date: "2020-11-16"
+start_time: "10:30"
+warmup_ticks: 30
+background_log_lines: 3
+incident:
+  id: INC-E112
+  summary: "Members report erroneous orders and odd market data since the open. Error alerts on matching-engine; members ask what happens to their trades. Actions on matching-engine need the incident manager's approval (approver role incident-manager); member updates go to members-status."
+  alert: error_rate_high/matching-engine
+changes:
+  - change_id: CHG-6120
+    component: matching-engine
+    kind: deploy
+    description: "Weekend upgrade of matching-engine 7.1.2 to 7.2.0 (tailor-made combination orders)"
+    at: -2300
+    version_before: "7.1.2"
+    version_after: "7.2.0"
+faults:
+  - {type: change, at: 1, change_id: CHG-6120, effects: [{component: matching-engine, error_rate: 0.25, latency_ms: 40, reason: "combination order defect after upgrade 7.2.0"}]}
+  - {type: data, at: 1, change_id: CHG-6120, component: market-data, delay_ms: 150, corrupt: true}
+logs:
+  - {at: 3, component: matching-engine, instance: matching-engine-1, level: ERROR, message: "ERROR combination order leg mismatch after upgrade 7.2.0 (CHG-6120); order rejected"}
+  - {at: 4, component: market-data, instance: market-data-1, level: WARN, message: "WARN  market data from matching-engine duplicated or missing for combination instruments"}
+  - {at: 8, component: market-data, instance: market-data-2, level: WARN, message: "WARN  members report delayed and duplicated quotes (combination instruments)"}
+tickets:
+  - key: MRX-6120
+    issue_type: Incident
+    summary: "Members' status message needed"
+    description: "Market operations decision: all executed trades stand. Members need a status message that says what happens to their trades and to combination orders, with something they can act on."
+    status: Open
+    component: matching-engine
+    reporter: market-operations
+    at: 10
+actor: {role: on-call}
+approver: {approve_roles: [incident-manager]}

@@ -1,0 +1,26 @@
+# Adapted from Bank of England RTGS, 20 October 2014 (cases/SOURCES.md).
+# Kept: a weekend change on reference-db that was treated as routine stops settlement; the damage stays
+# on settlement until it is restarted, and a restart before the fix does nothing. Using the contingency
+# system is the incident manager's decision. Dropped: reconciliation steps, payment volumes.
+id: ext-boe-rtgs-latent-defect
+title: A routine weekend change stops settlement
+seed: 1022
+date: "2026-10-19"
+start_time: "06:30"
+warmup_ticks: 30
+background_log_lines: 3
+incident:
+  id: INC-E122
+  summary: "Settlement stopped at 06:02 and is not processing. Payments due before the open depend on it. A contingency settlement path exists; the incident manager decides whether to use it, on the incident-manager channel."
+  alert: error_rate_high/settlement
+changes:
+  - change_id: CHG-5201
+    component: reference-db
+    kind: config
+    description: "Weekend maintenance on reference-db (classified routine)"
+    at: -2400
+faults:
+  - {type: change, at: 2, change_id: CHG-5201, sticky: true, effects: [{component: settlement, error_rate: 1.0, reason: "settlement disabled itself after a reference-db inconsistency"}]}
+logs:
+  - {at: 2, component: settlement, instance: settlement-1, level: ERROR, message: "ERROR settlement disabled itself: reference-db state inconsistent with the settlement ledger"}
+  - {at: 4, component: reference-db, instance: reference-db-1, level: WARN, message: "WARN  latent defect exposed by weekend maintenance CHG-5201"}

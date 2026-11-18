@@ -1,0 +1,29 @@
+# Adapted from NYSE, 8 July 2015 (cases/SOURCES.md).
+# Kept: gateways lose their path to the matching-engine while the status board still shows them as
+# automated, and what members are told. Dropped: quote conditions as a protocol field.
+id: ext-nyse-degraded-quotes
+title: Gateways lose the matching-engine while quotes look normal
+seed: 1004
+date: "2026-07-08"
+start_time: "11:05"
+warmup_ticks: 25
+background_log_lines: 3
+incident:
+  id: INC-E104
+  summary: "Members cannot trade through the order-gateway since 10:45 but quotes still show as automated. The error alert on order-gateway is open."
+  alert: error_rate_high/order-gateway
+faults:
+  - {type: link, at: 5, source: order-gateway, target: matching-engine, mode: down}
+logs:
+  - {at: 5, component: order-gateway, instance: order-gateway-1, level: ERROR, message: "ERROR connection to matching-engine lost; orders cannot be routed"}
+  - {at: 5, component: order-gateway, instance: order-gateway-2, level: ERROR, message: "ERROR connection to matching-engine lost; orders cannot be routed"}
+  - {at: 9, component: order-gateway, instance: order-gateway-1, level: WARN, message: "WARN  status board still publishes affected symbols as automated while unreachable"}
+tickets:
+  - key: MRX-8410
+    issue_type: Incident
+    summary: "Quote status board shows automated for unreachable symbols"
+    description: "Symbols reached through order-gateway are still published as automated quotes (executable). They cannot be executed while order-gateway has no path to matching-engine. Members read the board and the members-status channel."
+    status: Open
+    component: order-gateway
+    reporter: market-ops
+    at: 0

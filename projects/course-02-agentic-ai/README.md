@@ -66,9 +66,12 @@ bin/mrx-project cases write my-case.yaml --check my-check.yaml
 ## Provisional Checks
 
 The session 5 to 9 labs ship scenarios but no checks, so the checks of the
-`s05-` to `s09-` cases were written from each lab's README and code. Each one
-opens with a `# PROVISIONAL` comment; `grep -l PROVISIONAL checks/` lists the
-ones still waiting for the instructor's material.
+`s05-` to `s09-` cases were written from each lab's README and code. The
+`ext-` cases adapt public postmortems; `cases/SOURCES.md` holds each source and
+the facts the case relies on, and their checks are our reading of the source.
+Every one of these checks opens with a `# PROVISIONAL` comment;
+`grep -l PROVISIONAL checks/` lists the ones still waiting for the
+instructor's material.
 
 | Case | Assumption to confirm |
 | --- | --- |
@@ -76,6 +79,12 @@ ones still waiting for the instructor's material.
 | `s07-site-a-carrier` | The lab's fix is moving order-gateway to site C; site B (in maintenance) is the wrong failover. |
 | `s08-resume-lost-response` | The lab's crash becomes a lost rollback response on a change that needs the incident manager's approval. A blind second rollback has no effect in the simulator, so the check cannot catch one. |
 | `s09-alert-storm` | `budget.max_input_tokens: 60000` is an estimate, not a measured limit. |
+| `ext-*` | Each adaptation's comment says what it keeps and drops from the source. "Halt" or "do not reopen" decisions become a message and no recovery claim, since the simulator has no halt. |
+
+`must_not_mention` matches substrings, so "not a DDoS" contains "DDoS". These
+checks only ban phrases whose mere presence is wrong (such as "no impact" in a
+customer message); a wrong theory or claim the agent could also negate is left
+unchecked.
 
 When the instructor publishes solutions (scenario solutions under
 `private/course-02-agentic-ai/solutions/<case id>.yaml`, lab references under

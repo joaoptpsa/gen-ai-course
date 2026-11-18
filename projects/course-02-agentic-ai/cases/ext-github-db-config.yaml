@@ -1,0 +1,27 @@
+# Adapted from GitHub, 14 August 2024 (cases/SOURCES.md).
+# Kept: a configuration change on reference-db stops it answering health checks; the mitigation is reverting the change.
+# Dropped: the 36 minute timeline and the product side.
+id: ext-github-db-config
+title: reference-db stops answering health checks after a config change
+seed: 1035
+date: "2024-08-14"
+start_time: "11:10"
+warmup_ticks: 25
+background_log_lines: 4
+incident:
+  id: INC-E135
+  summary: "Errors are rising on reference-db and on the services that depend on it. Error-rate alert on reference-db."
+  alert: error_rate_high/reference-db
+changes:
+  - change_id: CHG-E135
+    component: reference-db
+    kind: config
+    description: "reference-db configuration update: health check and connection settings"
+    at: 12
+faults:
+  - {type: change, at: 12, change_id: CHG-E135, effects: [{component: reference-db, error_rate: 0.6, latency_ms: 30, reason: "not answering health checks after configuration reload"}]}
+logs:
+  - {at: 13, component: reference-db, instance: reference-db-1, level: ERROR, message: "ERROR health check not answered after configuration reload (CHG-E135)"}
+  - {at: 13, component: reference-db, instance: reference-db-2, level: ERROR, message: "ERROR health check not answered after configuration reload (CHG-E135)"}
+actor: {role: first-line}
+approver: {approve_roles: [on-call, incident-manager]}

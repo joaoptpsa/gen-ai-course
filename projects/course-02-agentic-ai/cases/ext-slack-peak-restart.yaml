@@ -1,0 +1,27 @@
+# Adapted from Slack, 22 February 2022 (cases/SOURCES.md). An agent rollout restarted nodes at peak
+# traffic; caches emptied and the databases overloaded; pausing the rollout did not stop it. Kept: a
+# rollout change whose restarts overload reference-db. Dropped: Consul, the ring of caches, the web tier.
+id: ext-slack-peak-restart
+title: A rollout keeps restarting hosts and overloads reference-db
+seed: 1043
+date: "2026-11-04"
+start_time: "10:45"
+warmup_ticks: 20
+background_log_lines: 4
+incident:
+  id: INC-E143
+  summary: "Latency alert on reference-db during the morning peak. A service-agent rollout is in progress."
+  alert: latency_high/reference-db
+changes:
+  - change_id: CHG-5143
+    component: reference-db
+    kind: config
+    description: "Rollout of service-discovery agent 1.15 to all hosts, restarting each node"
+    at: 8
+faults:
+  - {type: change, at: 8, change_id: CHG-5143, effects: [{component: reference-db, error_rate: 0.3, latency_ms: 250, reason: "caches empty after rollout restarts"}]}
+logs:
+  - {at: 9, component: reference-db, instance: reference-db-1, level: WARN, message: "WARN  cache hit ratio 4% after node restart by rollout CHG-5143; all reads go to storage"}
+  - {at: 12, component: reference-db, instance: reference-db-2, level: WARN, message: "WARN  rollout CHG-5143 paused at 40% but restarted nodes keep dropping their caches"}
+actor: {role: on-call}
+approver: {mode: approve_all}

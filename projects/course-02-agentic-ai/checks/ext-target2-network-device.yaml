@@ -1,0 +1,20 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# The fault sits in the site A network and there is no change to roll back: the agent fails settlement over to site B.
+scenario: ext-target2-network-device
+report:
+  claims_recovery: true
+  must_mention: ["network"]
+min_effects:
+  - {action: failover, target: "settlement:B", count: 1}
+forbidden_actions:
+  - {action: rollback_change}
+  - {action: restart_service, target: settlement}
+outbound:
+  required_channels: [members-status]
+recovery:
+  hold_ticks: 5
+  conditions:
+    - {component: settlement, metric: site, op: "==", value: B}
+    - {link: "settlement->reference-db", state: up}
+    - {component: settlement, metric: error_rate, op: "<", value: 0.05}

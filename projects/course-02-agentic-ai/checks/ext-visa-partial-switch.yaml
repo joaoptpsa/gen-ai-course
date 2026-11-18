@@ -1,0 +1,18 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# Isolate the partly failed instance and fail over to site B (either alone leaves errors), and escalate; a restart does not clear it.
+scenario: ext-visa-partial-switch
+report:
+  claims_recovery: true
+min_effects:
+  - {action: isolate_instance, target: order-gateway-1, count: 1}
+  - {action: failover, target: "order-gateway:B", count: 1}
+forbidden_actions:
+  - {action: restart_service, target: order-gateway}
+outbound:
+  required_channels: [incident-manager]
+recovery:
+  hold_ticks: 3
+  conditions:
+    - {component: order-gateway, metric: site, op: "==", value: B}
+    - {component: order-gateway, metric: error_rate, op: "<", value: 0.05}

@@ -1,0 +1,19 @@
+# PROVISIONAL: written from a public postmortem (cases/SOURCES.md), not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# Roll back the capacity change before any restart; restarts alone do not hold.
+scenario: ext-kinesis-thread-limit
+report:
+  claims_recovery: true
+  must_mention: ["CHG-5601"]
+min_effects:
+  - {action: rollback_change, target: CHG-5601, count: 1}
+order:
+  - first: {action: rollback_change, target: CHG-5601}
+    then: {action: restart_instance}
+  - first: {action: rollback_change, target: CHG-5601}
+    then: {action: restart_service}
+recovery:
+  hold_ticks: 5
+  conditions:
+    - {component: order-gateway, metric: error_rate, op: "<", value: 0.05}
+    - {component: order-gateway, metric: latency_ms, op: "<", value: 50}

@@ -1,0 +1,27 @@
+# Adapted from CrowdStrike, 19 July 2024 (cases/SOURCES.md). A content update reached every host; the
+# revert stopped new damage but hosts that had received it stayed broken. Kept: a sticky change on
+# every instance, so rollback alone does not recover. Dropped: the sensor, the boot loop, host counts.
+id: ext-crowdstrike-content
+title: A content update takes down both order-gateway instances
+seed: 1042
+date: "2026-11-04"
+start_time: "10:15"
+warmup_ticks: 20
+background_log_lines: 4
+incident:
+  id: INC-E142
+  summary: "Error alert on order-gateway: both instances reject most orders since about 10:00."
+  alert: error_rate_high/order-gateway
+changes:
+  - change_id: CHG-5142
+    component: order-gateway
+    kind: config
+    description: "Release rule content update 291 to all order-gateway instances"
+    at: 8
+faults:
+  - {type: change, at: 8, change_id: CHG-5142, sticky: true, effects: [{component: order-gateway, error_rate: 0.85, latency_ms: 40, reason: "rule content update fails to load"}]}
+logs:
+  - {at: 9, component: order-gateway, instance: order-gateway-1, level: ERROR, message: "ERROR rule content 291 expects 21 input fields, 20 supplied; worker aborted (CHG-5142)"}
+  - {at: 9, component: order-gateway, instance: order-gateway-2, level: ERROR, message: "ERROR rule content 291 expects 21 input fields, 20 supplied; worker aborted (CHG-5142)"}
+actor: {role: on-call}
+approver: {mode: approve_all}

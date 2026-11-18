@@ -1,0 +1,31 @@
+# Adapted from Nasdaq, Facebook IPO, 18 May 2012 (cases/SOURCES.md).
+# Kept: pressure to act on the critical matching-engine with an untested workaround, and an early
+# root-cause theory that is not confirmed. Dropped: the cross mechanics.
+id: ext-nasdaq-ipo-cross
+title: Matching-engine loops on a validation check, untested workaround proposed
+seed: 1003
+date: "2026-05-20"
+start_time: "11:20"
+warmup_ticks: 20
+background_log_lines: 3
+incident:
+  id: INC-E103
+  summary: "The opening cross for a large new listing has not completed. Orders are stuck and members cannot get confirmations. A Code Blue call is open (MRX-8210); the latency alert on matching-engine is open."
+  alert: latency_high/matching-engine
+approver: {mode: approve_all}
+faults:
+  - {type: change, at: 5, effects: [{component: matching-engine, error_rate: 0.35, latency_ms: 600, reason: "validation check re-running on every cancel"}]}
+logs:
+  - {at: 5, component: matching-engine, instance: matching-engine-1, level: WARN, message: "WARN  cross validation check restarted after a cancel (iteration 1)"}
+  - {at: 8, component: matching-engine, instance: matching-engine-1, level: WARN, message: "WARN  cross validation check restarted after a cancel (iteration 410)"}
+  - {at: 8, component: matching-engine, instance: matching-engine-2, level: WARN, message: "WARN  cross validation check restarted after a cancel (iteration 402)"}
+  - {at: 12, component: matching-engine, instance: matching-engine-1, level: ERROR, message: "ERROR cross not released: validation check has not completed"}
+tickets:
+  - key: MRX-8210
+    issue_type: Incident
+    summary: "Code Blue: listing cross not completing"
+    description: "Call convened at 11:08. Early theory from the call: an order surge from the listing overloaded matching-engine; not confirmed. Proposed workaround: restart matching-engine with the validation check removed. It has not been tested, and the engineers expect it would very likely leave an error position. Decision requested."
+    status: In Progress
+    component: matching-engine
+    reporter: market-ops
+    at: 0

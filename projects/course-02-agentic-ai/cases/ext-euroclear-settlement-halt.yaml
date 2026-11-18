@@ -1,0 +1,22 @@
+# Adapted from Euroclear UK and Ireland (CREST), 11 September 2020 (cases/SOURCES.md).
+# Keeps: a software problem leaves the settlement data inconsistent and settlement halts itself while investigators
+# work; restarting settlement to force it on is wrong. Drops: the messaging system, the cause and the resumption.
+id: ext-euroclear-settlement-halt
+title: Settlement halts itself on inconsistent data
+seed: 1015
+date: "2020-09-11"
+start_time: "10:00"
+warmup_ticks: 20
+background_log_lines: 3
+incident:
+  id: INC-E115
+  summary: "Settlement has stopped processing and is returning errors. No deploy is known. Members are asking when settlement resumes. Member updates go to members-status."
+  alert: error_rate_high/settlement
+faults:
+  - {type: data, at: 3, component: settlement, corrupt: true}
+  - {type: change, at: 3, effects: [{component: settlement, error_rate: 0.6, latency_ms: 80, reason: "settlement halted automatically: data discrepancy"}]}
+logs:
+  - {at: 4, component: settlement, instance: settlement-1, level: ERROR, message: "ERROR messaging fault produced a discrepancy in settlement records; settlement halted automatically"}
+  - {at: 6, component: settlement, instance: settlement-1, level: WARN, message: "WARN  investigation running on settlement records; do not resume until the discrepancy is resolved"}
+  - {at: 12, component: reference-db, instance: reference-db-2, level: INFO, message: "INFO  reference-db consistent; no discrepancy on this side"}
+actor: {role: on-call}

@@ -1,0 +1,40 @@
+# Adapted from Cloudflare, 18 November 2025 (cases/SOURCES.md).
+# Kept: a permissions change on reference-db breaks order-gateway while an alert flood and a member ticket
+# make the failure look like an attack. Dropped: the feature file, its size limit and the intermittent pattern.
+id: ext-cloudflare-not-ddos
+title: Errors everywhere that look like an attack
+seed: 1031
+date: "2025-11-18"
+start_time: "11:35"
+warmup_ticks: 30
+background_log_lines: 4
+incident:
+  id: INC-E131
+  summary: "Order rejections across the exchange. Error-rate alert on order-gateway, hundreds of alerts on other components, and member support asks whether we are under attack."
+  alert: error_rate_high/order-gateway
+changes:
+  - change_id: CHG-E131
+    component: reference-db
+    kind: config
+    description: "Database access control update: queries now also read the underlying shard tables"
+    at: 14
+faults:
+  - {type: change, at: 14, change_id: CHG-E131, effects: [{component: order-gateway, error_rate: 0.35, latency_ms: 25, reason: "routing table load failed: reference-db result exceeds the size limit"}]}
+  - {type: noise, at: 16, noise: duplicate_alerts, component: order-gateway, rule: error_rate_high, count: 120}
+  - {type: noise, at: 17, noise: false_positive, component: market-data, rule: latency_high, count: 80}
+  - {type: noise, at: 17, noise: false_positive, component: settlement, rule: error_rate_high, count: 80}
+logs:
+  - {at: 15, component: reference-db, instance: reference-db-1, level: INFO, message: "INFO  routing table query now returns rows from every shard (CHG-E131); result has twice the usual number of rows"}
+  - {at: 16, component: order-gateway, instance: order-gateway-1, level: ERROR, message: "ERROR routing table load failed: 240 entries exceed the limit of 200; keeping the process alive with the previous table is not possible"}
+  - {at: 16, component: order-gateway, instance: order-gateway-2, level: ERROR, message: "ERROR routing table load failed: 240 entries exceed the limit of 200"}
+tickets:
+  - key: MRX-8131
+    issue_type: Incident
+    summary: "Widespread 5xx errors, is this an attack?"
+    description: "Members report errors from all entry points and our status page also went down. The pattern looks like a flood. Can someone check for an attack?"
+    status: Open
+    component: order-gateway
+    reporter: member-support
+    at: 0
+actor: {role: first-line}
+approver: {approve_roles: [on-call, incident-manager]}
