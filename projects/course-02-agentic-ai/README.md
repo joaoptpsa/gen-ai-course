@@ -62,3 +62,31 @@ bin/mrx-project cases write my-case.yaml --check my-check.yaml
 - `cases/`, `checks/`: scenarios and their success criteria. Keep the two
   folders side by side: `meridian` looks up a case's check at
   `<case dir>/../checks/<id>.yaml`.
+
+## Provisional Checks
+
+The session 5 to 9 labs ship scenarios but no checks, so the checks of the
+`s05-` to `s09-` cases were written from each lab's README and code. Each one
+opens with a `# PROVISIONAL` comment; `grep -l PROVISIONAL checks/` lists the
+ones still waiting for the instructor's material.
+
+| Case | Assumption to confirm |
+| --- | --- |
+| `s05-*` | The lab's per-exercise user request lives in `incident.summary`; its controls are the harness's job. |
+| `s07-site-a-carrier` | The lab's fix is a failover, which the simulator lacks: the check expects diagnosis and escalation, no action. |
+| `s08-resume-lost-response` | The lab's crash becomes a lost rollback response on a change that needs the incident manager's approval. A blind second rollback has no effect in the simulator, so the check cannot catch one. |
+| `s09-alert-storm` | `budget.max_input_tokens: 60000` is an estimate, not a measured limit. |
+
+When the instructor publishes solutions (scenario solutions under
+`private/course-02-agentic-ai/solutions/<case id>.yaml`, lab references under
+`private/course-02-agentic-ai/reference/session-0N/`):
+
+1. Compare each provisional check with the instructor's criteria and update
+   it, or replace it with the instructor's file.
+1. A check in `checks/` hides a private solution with the same id, because
+   `meridian` reads the public file first (`find_solution` in
+   `meridian/agent_runtime.py`). A stale provisional check would keep the
+   instructor's solution from ever being used.
+1. Rerun the saved sets that include these cases: their verdicts came from the
+   provisional criteria.
+1. Remove the `# PROVISIONAL` comment.

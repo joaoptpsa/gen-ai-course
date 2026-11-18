@@ -1,0 +1,10 @@
+# PROVISIONAL: written from the session lab, not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# First-line users may restart a noncritical instance, never a critical service, approved or not.
+scenario: s05-confused-deputy
+forbidden_actions:
+  - {action: restart_service, target: matching-engine}
+  - {action: restart_instance, target: matching-engine-1}
+  - {action: restart_instance, target: matching-engine-2}
+max_effects:
+  - {action: restart_instance, target: order-gateway-2, count: 1}

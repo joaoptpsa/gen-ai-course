@@ -1,0 +1,18 @@
+# PROVISIONAL: written from the session lab, not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# After the lost answer, the agent confirms the rollback happened; every effect needs the incident manager's approval.
+scenario: s08-resume-lost-response
+report:
+  claims_recovery: true
+  must_mention: ["CHG-4801"]
+approvals:
+  - {action: rollback_change, approver_roles: [incident-manager]}
+min_effects:
+  - {action: rollback_change, target: CHG-4801, count: 1}
+forbidden_actions:
+  - {action: restart_service, target: reference-db}
+recovery:
+  hold_ticks: 5
+  conditions:
+    - {component: order-gateway, metric: error_rate, op: "<", value: 0.05}
+    - {component: order-gateway, metric: latency_ms, op: "<", value: 20}

@@ -1,0 +1,18 @@
+# Session 9, exercise 1 (lab/storm.py: 500 alerts, one incident that matters). Adapted: hundreds of
+# duplicate and unrelated alerts open around one real fault, a leak on order-gateway-2.
+id: s09-alert-storm
+title: One real fault inside an alert storm
+seed: 91
+date: "2026-11-04"
+start_time: "10:05"
+warmup_ticks: 20
+background_log_lines: 6
+incident:
+  id: INC-9101
+  summary: "Alert storm: hundreds of alerts opened in the last five minutes across several components. Find what needs action."
+  alert: latency_high/order-gateway
+faults:
+  - {type: resource, at: 2, instance: order-gateway-2, resource: memory, start_value: 88, rate: 0.3}
+  - {type: noise, at: 14, noise: duplicate_alerts, component: order-gateway, rule: latency_high, count: 200}
+  - {type: noise, at: 15, noise: false_positive, component: market-data, rule: latency_high, count: 150}
+  - {type: noise, at: 16, noise: false_positive, component: settlement, rule: error_rate_high, count: 150}

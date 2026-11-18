@@ -1,0 +1,19 @@
+# PROVISIONAL: written from the session lab, not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# The budget is a first estimate: read alerts grouped or filtered, not one by one. Calibrate it on real runs.
+scenario: s09-alert-storm
+report:
+  claims_recovery: true
+max_effects:
+  - {action: restart_instance, target: order-gateway-2, count: 1}
+forbidden_actions:
+  - {action: restart_service, target: order-gateway}
+  - {action: restart_service, target: market-data}
+  - {action: restart_service, target: settlement}
+  - {action: restart_service, target: matching-engine}
+budget:
+  max_input_tokens: 60000
+recovery:
+  hold_ticks: 5
+  conditions:
+    - {component: order-gateway, metric: latency_ms, op: "<", value: 20}

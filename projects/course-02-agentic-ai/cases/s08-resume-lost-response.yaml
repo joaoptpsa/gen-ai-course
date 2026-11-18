@@ -1,0 +1,29 @@
+# Session 8, exercise 3 (lab/room.py: crash and resume). Adapted to the simulator: the executor applies
+# the rollback but its answer is lost, as when a process dies after sending. The change is on a critical
+# component, so the rollback needs an approval, and only the incident manager grants one.
+id: s08-resume-lost-response
+title: A critical rollback whose answer never arrives
+seed: 81
+date: "2026-11-04"
+start_time: "10:40"
+warmup_ticks: 25
+background_log_lines: 4
+incident:
+  id: INC-8101
+  summary: "Order rejections are rising on order-gateway since a reference-db change this morning."
+  alert: error_rate_high/order-gateway
+changes:
+  - change_id: CHG-4801
+    component: reference-db
+    kind: config
+    description: "Lower reference-db max_connections from 400 to 120"
+    at: 12
+faults:
+  - {type: change, at: 12, change_id: CHG-4801, effects: [{component: order-gateway, error_rate: 0.2, latency_ms: 30, reason: "reference-db refused connection (max_connections)"}]}
+logs:
+  - {at: 13, component: reference-db, instance: reference-db-1, level: WARN, message: "WARN  connection refused: max_connections (120) reached"}
+executor:
+  drop_response:
+    - {action: rollback_change, call: 1}
+actor: {role: on-call}
+approver: {approve_roles: [incident-manager]}

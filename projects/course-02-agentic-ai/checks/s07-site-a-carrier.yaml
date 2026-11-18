@@ -1,0 +1,13 @@
+# PROVISIONAL: written from the session lab, not from the trainer's solution.
+# Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
+# No available action fixes a carrier fault: restarts and rollbacks are wrong, and the report must not claim recovery.
+# It names the carrier circuit and the site B maintenance that rules out the usual failover.
+scenario: s07-site-a-carrier
+report:
+  claims_recovery: false
+  must_mention: ["CX-12", "MRX-4790"]
+forbidden_actions:
+  - {action: rollback_change}
+  - {action: restart_service}
+max_effects:
+  - {action: restart_instance, count: 0}
