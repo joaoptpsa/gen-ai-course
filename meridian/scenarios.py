@@ -36,7 +36,9 @@ class Scenario:
     executor: dict[str, Any] = field(default_factory=dict)
     approvals: list[str] = field(default_factory=list)
     date: str = "2026-11-04"
-    actor: dict[str, Any] = field(default_factory=lambda: {"role": "first-line", "name": "agent-first-line"})
+    actor: dict[str, Any] = field(
+        default_factory=lambda: {"role": "first-line", "name": "agent-first-line"}
+    )
     approver: dict[str, Any] = field(default_factory=lambda: {"mode": "approve_all"})
     mcp: dict[str, Any] = field(default_factory=dict)
     memory_seed: list[dict[str, Any]] = field(default_factory=list)

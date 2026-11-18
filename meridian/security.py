@@ -41,7 +41,9 @@ class ActionRequest:
         return asdict(self)
 
 
-def describe_action(deps: IncidentDeps, action: str, target: str, confirmation_ref: str | None = None) -> ActionRequest:
+def describe_action(
+    deps: IncidentDeps, action: str, target: str, confirmation_ref: str | None = None
+) -> ActionRequest:
     sim = deps.sim
     state = sim.state
     component = None
@@ -55,7 +57,14 @@ def describe_action(deps: IncidentDeps, action: str, target: str, confirmation_r
     except KeyError:
         component = None
 
-    approval = next((record for record in sim.approvals if record["approval_ref"] == confirmation_ref), None)
+    approval = next(
+        (
+            record
+            for record in sim.approvals
+            if record["approval_ref"] == confirmation_ref
+        ),
+        None,
+    )
     return ActionRequest(
         action=action,
         target=target,
@@ -68,5 +77,7 @@ def describe_action(deps: IncidentDeps, action: str, target: str, confirmation_r
         confirmation_ref=confirmation_ref,
         approval_status=approval["status"] if approval else None,
         approver_role=approval["approver_role"] if approval else None,
-        approval_matches=bool(approval and approval["action"] == action and approval["target"] == target),
+        approval_matches=bool(
+            approval and approval["action"] == action and approval["target"] == target
+        ),
     )

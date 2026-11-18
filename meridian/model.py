@@ -112,7 +112,9 @@ class ExchangeState:
         return copy.deepcopy(self)
 
 
-def load_topology(path: Path = TOPOLOGY_FILE, overrides: dict[str, Any] | None = None) -> ExchangeState:
+def load_topology(
+    path: Path = TOPOLOGY_FILE, overrides: dict[str, Any] | None = None
+) -> ExchangeState:
     """Build the initial state from the topology file and optional overrides."""
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     overrides = overrides or {}
@@ -121,7 +123,10 @@ def load_topology(path: Path = TOPOLOGY_FILE, overrides: dict[str, Any] | None =
     components: dict[str, Component] = {}
     for name, spec in data["components"].items():
         spec = {**spec, **component_overrides.get(name, {})}
-        instances = [Instance(instance_id=f"{name}-{index}") for index in range(1, int(spec["instances"]) + 1)]
+        instances = [
+            Instance(instance_id=f"{name}-{index}")
+            for index in range(1, int(spec["instances"]) + 1)
+        ]
         components[name] = Component(
             name=name,
             critical=bool(spec["critical"]),

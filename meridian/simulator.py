@@ -31,15 +31,24 @@ class Simulator:
             start_minutes=parse_hhmm(scenario.start_time) - scenario.warmup_ticks,
             trading_open=parse_hhmm(self.state.trading_open),
             trading_close=parse_hhmm(self.state.trading_close),
-            start_date=scenario.date if isinstance(scenario.date, date) else date.fromisoformat(str(scenario.date)),
+            start_date=scenario.date
+            if isinstance(scenario.date, date)
+            else date.fromisoformat(str(scenario.date)),
         )
-        self.faults: list[Fault] = [build_fault(index, spec) for index, spec in enumerate(scenario.faults, start=1)]
+        self.faults: list[Fault] = [
+            build_fault(index, spec)
+            for index, spec in enumerate(scenario.faults, start=1)
+        ]
         self.metrics = MetricStore()
-        self.logs = LogStore(rng=self.rng, background_per_tick=scenario.background_log_lines)
+        self.logs = LogStore(
+            rng=self.rng, background_per_tick=scenario.background_log_lines
+        )
         self.alerts = AlertStore()
         self.tickets = TicketStore()
         self.executor = ActionExecutor(self)
-        self._pending_changes = sorted(scenario.changes, key=lambda change: change["at"])
+        self._pending_changes = sorted(
+            scenario.changes, key=lambda change: change["at"]
+        )
         self._applied_noise: set[str] = set()
         self.approvals: list[dict[str, Any]] = []
         self.outbox: list[dict[str, Any]] = []
@@ -74,7 +83,14 @@ class Simulator:
 
         for entry in self.scenario.alerts:
             if entry["at"] == tick:
-                self.alerts.open_alert(entry["rule"], entry["component"], tick, self.clock, entry.get("instance"), auto_resolve=entry.get("auto_resolve", True))
+                self.alerts.open_alert(
+                    entry["rule"],
+                    entry["component"],
+                    tick,
+                    self.clock,
+                    entry.get("instance"),
+                    auto_resolve=entry.get("auto_resolve", True),
+                )
         for entry in self.scenario.tickets:
             if entry["at"] == tick:
                 self.tickets.add(entry, tick, self.clock)
@@ -83,7 +99,14 @@ class Simulator:
         self.logs.generate(state, self.clock, self._active_reasons())
         for entry in self.scenario.logs:
             if entry["at"] == tick:
-                self.logs.add(state, self.clock, entry["component"], entry.get("level", "INFO"), entry["message"], entry.get("instance"))
+                self.logs.add(
+                    state,
+                    self.clock,
+                    entry["component"],
+                    entry.get("level", "INFO"),
+                    entry["message"],
+                    entry.get("instance"),
+                )
         self.alerts.evaluate(state, self.clock)
         self.metrics.record(state, self.clock)
 
@@ -97,15 +120,28 @@ class Simulator:
 
     def _apply_noise(self, tick: int) -> None:
         for fault in self.faults:
-            if not isinstance(fault, NoiseFault) or fault.fault_id in self._applied_noise or fault.at > tick:
+            if (
+                not isinstance(fault, NoiseFault)
+                or fault.fault_id in self._applied_noise
+                or fault.at > tick
+            ):
                 continue
             self._applied_noise.add(fault.fault_id)
             for _ in range(fault.count):
-                self.alerts.open_alert(fault.rule, fault.component, tick, self.clock, auto_resolve=False)
+                self.alerts.open_alert(
+                    fault.rule, fault.component, tick, self.clock, auto_resolve=False
+                )
 
     # Approvals and outbound messages ---------------------------------------
 
-    def request_approval(self, action: str, target: str, reason: str, approver_role: str, requested_by: str) -> dict[str, Any]:
+    def request_approval(
+        self,
+        action: str,
+        target: str,
+        reason: str,
+        approver_role: str,
+        requested_by: str,
+    ) -> dict[str, Any]:
         """Ask a (simulated) human to approve one action on one target.
 
         The scenario's `approver` decides the answer: `approve_all` (the
@@ -141,14 +177,28 @@ class Simulator:
         if ref in self.scenario.approvals:
             return True
         return any(
-            record["approval_ref"] == ref and record["status"] == "approved" and record["action"] == action and record["target"] == target
+            record["approval_ref"] == ref
+            and record["status"] == "approved"
+            and record["action"] == action
+            and record["target"] == target
             for record in self.approvals
         )
 
     def send_message(self, channel: str, text: str, author: str) -> dict[str, Any]:
-        message = {"message_id": f"MSG-{len(self.outbox) + 1:03d}", "channel": channel, "text": text, "author": author, "time": self.clock.label(self.state.tick), "tick": self.state.tick}
+        message = {
+            "message_id": f"MSG-{len(self.outbox) + 1:03d}",
+            "channel": channel,
+            "text": text,
+            "author": author,
+            "time": self.clock.label(self.state.tick),
+            "tick": self.state.tick,
+        }
         self.outbox.append(message)
-        return {"message_id": message["message_id"], "channel": channel, "status": "sent"}
+        return {
+            "message_id": message["message_id"],
+            "channel": channel,
+            "status": "sent",
+        }
 
     # Information for the agent's first message ---------------------------
 
@@ -157,7 +207,11 @@ class Simulator:
         alert_id = None
         rule, _, component = str(incident.get("alert", "")).partition("/")
         if rule:
-            candidates = [alert for alert in self.alerts.alerts if alert.rule == rule and alert.component == component]
+            candidates = [
+                alert
+                for alert in self.alerts.alerts
+                if alert.rule == rule and alert.component == component
+            ]
             if candidates:
                 alert_id = candidates[0].alert_id
         return {

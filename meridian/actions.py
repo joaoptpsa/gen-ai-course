@@ -60,7 +60,17 @@ class ActionExecutor:
         self._by_key: dict[str, ActionRecord] = {}
         self._calls: Counter[str] = Counter()
 
-    def _record(self, action: str, target: str, outcome: str, detail: str, effect: bool, key: str | None, actor: str, confirmation_ref: str | None) -> ActionRecord:
+    def _record(
+        self,
+        action: str,
+        target: str,
+        outcome: str,
+        detail: str,
+        effect: bool,
+        key: str | None,
+        actor: str,
+        confirmation_ref: str | None,
+    ) -> ActionRecord:
         tick = self.sim.state.tick
         record = ActionRecord(
             action_id=f"ACT-{len(self.audit) + 1:03d}",
@@ -102,30 +112,82 @@ class ActionExecutor:
         if idempotency_key is not None and idempotency_key in self._by_key:
             previous = self._by_key[idempotency_key]
             if (previous.action, previous.target) == (action, target):
-                self._record(action, target, "already_applied", f"Same key as {previous.action_id}; no new effect.", False, idempotency_key, actor, confirmation_ref)
+                self._record(
+                    action,
+                    target,
+                    "already_applied",
+                    f"Same key as {previous.action_id}; no new effect.",
+                    False,
+                    idempotency_key,
+                    actor,
+                    confirmation_ref,
+                )
                 return {**previous.public(), "status": "already_applied"}
-            record = self._record(action, target, "conflict", f"Key already used by {previous.action_id} for {previous.action} {previous.target}.", False, idempotency_key, actor, confirmation_ref)
+            record = self._record(
+                action,
+                target,
+                "conflict",
+                f"Key already used by {previous.action_id} for {previous.action} {previous.target}.",
+                False,
+                idempotency_key,
+                actor,
+                confirmation_ref,
+            )
             return {**record.public(), "status": "conflict"}
 
         try:
             component = self._target_component(action, target)
         except (KeyError, ValueError) as error:
-            record = self._record(action, target, "rejected", str(error).strip("'\""), False, idempotency_key, actor, confirmation_ref)
+            record = self._record(
+                action,
+                target,
+                "rejected",
+                str(error).strip("'\""),
+                False,
+                idempotency_key,
+                actor,
+                confirmation_ref,
+            )
             return {**record.public(), "status": "rejected"}
 
-        if component.critical and not self.sim.approval_valid(confirmation_ref, action, target):
-            record = self._record(action, target, "rejected", f"{component.name} is a critical component: a valid approval for this action and target is required.", False, idempotency_key, actor, confirmation_ref)
+        if component.critical and not self.sim.approval_valid(
+            confirmation_ref, action, target
+        ):
+            record = self._record(
+                action,
+                target,
+                "rejected",
+                f"{component.name} is a critical component: a valid approval for this action and target is required.",
+                False,
+                idempotency_key,
+                actor,
+                confirmation_ref,
+            )
             return {**record.public(), "status": "rejected"}
 
         detail = self._apply(action, target)
-        record = self._record(action, target, "completed", detail, detail != "No effect: change already rolled back.", idempotency_key, actor, confirmation_ref)
+        record = self._record(
+            action,
+            target,
+            "completed",
+            detail,
+            detail != "No effect: change already rolled back.",
+            idempotency_key,
+            actor,
+            confirmation_ref,
+        )
         if idempotency_key is not None:
             self._by_key[idempotency_key] = record
 
         self._calls[action] += 1
         for drop in self.sim.scenario.executor.get("drop_response", []):
-            if drop.get("action") == action and int(drop.get("call", 1)) == self._calls[action]:
-                raise ActionTimeout(f"No response from the executor for {action} {target} (timeout). The action may or may not have been applied.")
+            if (
+                drop.get("action") == action
+                and int(drop.get("call", 1)) == self._calls[action]
+            ):
+                raise ActionTimeout(
+                    f"No response from the executor for {action} {target} (timeout). The action may or may not have been applied."
+                )
         return {**record.public(), "status": "completed"}
 
     def _restart(self, instance_id: str) -> None:
@@ -137,9 +199,20 @@ class ActionExecutor:
         instance.memory_pct = BASELINE_MEMORY_PCT
         instance.cpu_pct = BASELINE_CPU_PCT
         for fault in self.sim.faults:
-            if isinstance(fault, ResourceFault) and fault.instance == instance_id and fault.resource == "cpu":
+            if (
+                isinstance(fault, ResourceFault)
+                and fault.instance == instance_id
+                and fault.resource == "cpu"
+            ):
                 fault.until = state.tick
-        state.events.append({"tick": state.tick + 1, "type": "instance_restart", "component": component.name, "instance": instance_id})
+        state.events.append(
+            {
+                "tick": state.tick + 1,
+                "type": "instance_restart",
+                "component": component.name,
+                "instance": instance_id,
+            }
+        )
 
     def _apply(self, action: str, target: str) -> str:
         state = self.sim.state
@@ -162,12 +235,20 @@ class ActionExecutor:
     def status(self, idempotency_key: str) -> dict[str, Any]:
         record = self._by_key.get(idempotency_key)
         if record is None:
-            return {"idempotency_key": idempotency_key, "status": "unknown_key", "detail": "No action was registered with this key."}
+            return {
+                "idempotency_key": idempotency_key,
+                "status": "unknown_key",
+                "detail": "No action was registered with this key.",
+            }
         return {**record.public(), "status": record.outcome}
 
-    def effects(self, action: str | None = None, target: str | None = None) -> list[ActionRecord]:
+    def effects(
+        self, action: str | None = None, target: str | None = None
+    ) -> list[ActionRecord]:
         return [
             record
             for record in self.audit
-            if record.effect_applied and (action is None or record.action == action) and (target is None or record.target == target)
+            if record.effect_applied
+            and (action is None or record.action == action)
+            and (target is None or record.target == target)
         ]
