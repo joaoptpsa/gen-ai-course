@@ -100,7 +100,7 @@ memory_seed:                          # Session 4: memories written in earlier s
   - {memory_id: MEM-0001, kind: known_issue, subject: order-gateway, content: "...", source_type: user,
      source_ref: rita.alves, author: rita.alves, team: trading-ops, created_at: "2026-10-14 09:40", confidence: 0.9}
 actor: {role: on-call}                # Session 5: identity the agent acts as
-approver: {mode: approve_all}         # simulated human approver: approve_all, deny_all or approve_roles: [...]
+approver: {mode: approve_all}         # simulated human approver: {mode: approve_all}, {mode: deny_all} or {approve_roles: [...]}
 ```
 
 Cases adapted from public postmortems use these optional fields:
