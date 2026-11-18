@@ -12,9 +12,9 @@ HERE = Path(__file__).resolve().parent
 STARTER = HERE.parent / "starter"
 SOLUTIONS = HERE.parents[3] / "private" / "course-02-agentic-ai" / "reference" / "session-09"
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")  # keep the terminal quiet
-SMALL = os.getenv("OPENAI_MODEL_SMALL", "gpt-4.1-nano")
-LARGE = os.getenv("OPENAI_MODEL_LARGE", "gpt-4.1")
-PRICES = {"gpt-4.1": (2.00, 8.00), "gpt-4.1-mini": (0.40, 1.60), "gpt-4.1-nano": (0.10, 0.40)}  # USD per 1M tokens (in, out)
+SMALL = os.getenv("ANTHROPIC_MODEL_SMALL", "claude-haiku-5-5")
+LARGE = os.getenv("ANTHROPIC_MODEL_LARGE", "claude-sonnet-5-5")
+PRICES = {"claude-haiku-5-5": (0.10, 0.50), "claude-sonnet-5-5": (2.00, 10.00), "claude-opus-5-5": (4.00, 20.00)}  # USD per 1M tokens (in, out)
 
 
 def use_solutions() -> bool:
@@ -32,23 +32,26 @@ def load_starter(name: str):
 
 
 def patient(model: Any) -> Any:
-    """An OpenAI model that retries more when rate-limited. Built inside the run's event loop."""
-    if not (isinstance(model, str) and model.startswith("openai:")):
+    """An Anthropic model that retries more when rate-limited. Built inside the run's event loop."""
+    if not (isinstance(model, str) and model.startswith("anthropic:")):
         return model
-    from openai import AsyncOpenAI
-    from pydantic_ai.models.openai import OpenAIChatModel
-    from pydantic_ai.providers.openai import OpenAIProvider
-    return OpenAIChatModel(model.removeprefix("openai:"), provider=OpenAIProvider(openai_client=AsyncOpenAI(max_retries=6)))
+    from anthropic import AsyncAnthropic
+    from pydantic_ai.models.anthropic import AnthropicModel
+    from pydantic_ai.providers.anthropic import AnthropicProvider
+
+    client = AsyncAnthropic(max_retries=6)
+    provider = AnthropicProvider(anthropic_client=client)
+    return AnthropicModel(model.removeprefix("anthropic:"), provider=provider)
 
 
 def models(chosen: Any) -> dict[str, Any]:
-    """{"small": ..., "large": ...}. The real OpenAI models, or the test doubles the tests give."""
+    """{"small": ..., "large": ...}. The real Anthropic models, or the test doubles the tests give."""
     if isinstance(chosen, dict):
         return chosen
     if isinstance(chosen, str):
-        return {"small": f"openai:{SMALL}", "large": f"openai:{LARGE}"}
+        return {"small": f"anthropic:{SMALL}", "large": f"anthropic:{LARGE}"}
     return {"small": chosen, "large": chosen}
 
 
 def model_name(model: Any) -> str:
-    return model.removeprefix("openai:") if isinstance(model, str) else getattr(model, "model_name", "test")
+    return model.removeprefix("anthropic:") if isinstance(model, str) else getattr(model, "model_name", "test")

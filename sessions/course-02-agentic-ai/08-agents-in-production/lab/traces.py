@@ -29,7 +29,8 @@ from room import HERE, load_starter, patient
 
 TRACES = HERE / "traces"
 LIVE = HERE / ".runs"
-PRICES = {"gpt-4.1": (2.00, 8.00), "gpt-4.1-mini": (0.40, 1.60), "gpt-4.1-nano": (0.10, 0.40)}  # USD per 1M tokens (in, out)
+# USD per 1M tokens (in, out). gpt-4.1-mini prices the scripted traces shipped in traces/.
+PRICES = {"claude-haiku-5-5": (0.10, 0.50), "claude-sonnet-5-5": (2.00, 10.00), "claude-opus-5-5": (4.00, 20.00), "gpt-4.1-mini": (0.40, 1.60)}
 
 
 class Trace:

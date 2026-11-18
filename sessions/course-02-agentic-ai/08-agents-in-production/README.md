@@ -13,7 +13,7 @@ The incident team of session 7 goes into production. Three things it meets there
 uv run --locked streamlit run sessions/course-02-agentic-ai/08-agents-in-production/lab/app.py
 ```
 
-Needs `OPENAI_API_KEY` in the repository's `.env`. Click **What to try** (top right).
+Needs `ANTHROPIC_API_KEY` in the repository's `.env`. Click **What to try** (top right).
 
 ## Exercises (in `starter/`)
 

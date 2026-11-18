@@ -58,13 +58,16 @@ def load_starter(name: str):
 
 
 def patient(model: Any) -> Any:
-    """An OpenAI model that retries more when rate-limited. Built inside the run's event loop."""
-    if not (isinstance(model, str) and model.startswith("openai:")):
+    """An Anthropic model that retries more when rate-limited. Built inside the run's event loop."""
+    if not (isinstance(model, str) and model.startswith("anthropic:")):
         return model
-    from openai import AsyncOpenAI
-    from pydantic_ai.models.openai import OpenAIChatModel
-    from pydantic_ai.providers.openai import OpenAIProvider
-    return OpenAIChatModel(model.removeprefix("openai:"), provider=OpenAIProvider(openai_client=AsyncOpenAI(max_retries=6)))
+    from anthropic import AsyncAnthropic
+    from pydantic_ai.models.anthropic import AnthropicModel
+    from pydantic_ai.providers.anthropic import AnthropicProvider
+
+    client = AsyncAnthropic(max_retries=6)
+    provider = AnthropicProvider(anthropic_client=client)
+    return AnthropicModel(model.removeprefix("anthropic:"), provider=provider)
 
 
 class RemediationReport(BaseModel):

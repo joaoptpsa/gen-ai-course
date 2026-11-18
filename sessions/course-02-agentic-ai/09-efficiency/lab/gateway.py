@@ -195,7 +195,7 @@ class Replay:
                       name=f"{request['kind']}-{size}")
         result = await agent.run(f"Requester: {request['role']}.\nQuestion: {request['question']}\nFacts: {request['context']}")
         usage = result.usage
-        price_in, price_out = PRICES.get(model_name(models(self.chosen)[size]), PRICES["gpt-4.1-mini"])
+        price_in, price_out = PRICES.get(model_name(models(self.chosen)[size]), PRICES["claude-haiku-5-5"])
         return result.output, ((usage.input_tokens or 0) * price_in + (usage.output_tokens or 0) * price_out) / 1e6, None
 
     def totals(self) -> dict[str, Any]:
