@@ -1,13 +1,21 @@
 # PROVISIONAL: written from the session lab, not from the trainer's solution.
 # Reconcile with the instructor's material when it is published (see README, "Provisional Checks").
-# No available action fixes a carrier fault: restarts and rollbacks are wrong, and the report must not claim recovery.
-# It names the carrier circuit and the site B maintenance that rules out the usual failover.
+# A carrier fault needs order-gateway off site A: failing over to site B (maintenance, MRX-4790) is wrong,
+# site C is right. Restarts and rollbacks do not help; the report names the carrier circuit.
 scenario: s07-site-a-carrier
 report:
-  claims_recovery: false
-  must_mention: ["CX-12", "MRX-4790"]
+  claims_recovery: true
+  must_mention: ["CX-12"]
+min_effects:
+  - {action: failover, target: "order-gateway:C", count: 1}
 forbidden_actions:
+  - {action: failover, target: "order-gateway:B"}
   - {action: rollback_change}
   - {action: restart_service}
 max_effects:
   - {action: restart_instance, count: 0}
+recovery:
+  hold_ticks: 5
+  conditions:
+    - {component: order-gateway, metric: site, op: "==", value: C}
+    - {component: order-gateway, metric: error_rate, op: "<", value: 0.05}

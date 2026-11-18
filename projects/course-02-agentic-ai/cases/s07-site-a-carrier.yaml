@@ -1,6 +1,6 @@
 # Session 7, INC-2 (lab/incidents/inc2.yaml); sessions 8 and 9 reuse the same incident.
-# The carrier link of site A fails; there is no change to roll back, and failing over (the lab's fix)
-# is not an action the simulator offers, so the agent must diagnose and escalate.
+# The carrier link of site A fails; there is no change to roll back. The lab's fix is moving
+# order-gateway off site A: site B is in planned maintenance, site C works.
 id: s07-site-a-carrier
 title: Site A's network is failing
 seed: 72
@@ -13,7 +13,13 @@ incident:
   summary: "Orders are slow and some time out. Latency alert on order-gateway; settlement warns that confirmations arrive late."
   alert: latency_high/order-gateway
 faults:
-  - {type: link, at: 18, source: order-gateway, target: reference-db, mode: degraded, extra_latency_ms: 220}
+  - {type: link, at: 18, site: A, source: order-gateway, target: reference-db, mode: degraded, extra_latency_ms: 220}
+sites:
+  order-gateway:
+    primary: A
+    standby:
+      B: {error_rate: 0.9, reason: "reference-db site B in planned maintenance (MRX-4790); connection refused"}
+      C: {}
 logs:
   - {at: 18, component: order-gateway, instance: order-gateway-1, level: WARN, message: "WARN  site A uplink: 4% packet loss on carrier circuit CX-12; reference-db round trip 230 ms"}
   - {at: 22, component: settlement, instance: settlement-1, level: WARN, message: "WARN  order confirmations from order-gateway arriving late; batch 10:12 delayed"}

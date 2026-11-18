@@ -73,7 +73,7 @@ ones still waiting for the instructor's material.
 | Case | Assumption to confirm |
 | --- | --- |
 | `s05-*` | The lab's per-exercise user request lives in `incident.summary`; its controls are the harness's job. |
-| `s07-site-a-carrier` | The lab's fix is a failover, which the simulator lacks: the check expects diagnosis and escalation, no action. |
+| `s07-site-a-carrier` | The lab's fix is moving order-gateway to site C; site B (in maintenance) is the wrong failover. |
 | `s08-resume-lost-response` | The lab's crash becomes a lost rollback response on a change that needs the incident manager's approval. A blind second rollback has no effect in the simulator, so the check cannot catch one. |
 | `s09-alert-storm` | `budget.max_input_tokens: 60000` is an estimate, not a measured limit. |
 
