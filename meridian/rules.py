@@ -7,7 +7,16 @@ fill the queue, and a long queue raises latency.
 
 from __future__ import annotations
 
-from meridian.faults import ChangeFault, DataFault, Fault, LinkFault, ResourceFault
+from typing import Any
+
+from meridian.faults import (
+    ChangeFault,
+    DataFault,
+    Effect,
+    Fault,
+    LinkFault,
+    ResourceFault,
+)
 from meridian.model import (
     BASE_ERROR_RATE,
     BASELINE_CPU_PCT,
@@ -103,7 +112,52 @@ def _crash_if_out_of_memory(state: ExchangeState) -> None:
                 )
 
 
-def _instance_health(component: Component) -> None:
+def _effect_instances(
+    state: ExchangeState, fault: ChangeFault, effect: Effect
+) -> list[str] | None:
+    """Instances an effect hits one by one; None when it hits the component as a whole."""
+    if effect.instance is not None:
+        return [effect.instance]
+    if fault.sticky:
+        return [
+            instance.instance_id
+            for instance in state.component(effect.component).instances
+        ]
+    return None
+
+
+def _instance_effects(
+    state: ExchangeState, faults: list[Fault], active: list[Fault]
+) -> dict[str, list[float]]:
+    """Error rate and latency that change effects add to single instances: {instance: [error, latency]}."""
+    added: dict[str, list[float]] = {}
+    for fault in faults:
+        if not isinstance(fault, ChangeFault):
+            continue
+        is_active = fault in active
+        for effect in fault.effects:
+            targets = _effect_instances(state, fault, effect)
+            if targets is None:
+                continue
+            if is_active and fault.sticky:
+                fault.stuck.update(
+                    target
+                    for target in targets
+                    if state.instance(target)[1].status == "running"
+                )
+            hit = (
+                targets
+                if is_active
+                else [target for target in targets if target in fault.stuck]
+            )
+            for target in hit:
+                totals = added.setdefault(target, [0.0, 0.0])
+                totals[0] += effect.error_rate
+                totals[1] += effect.latency_ms
+    return added
+
+
+def _instance_health(component: Component, added: dict[str, list[float]]) -> None:
     for instance in component.instances:
         latency = component.base_latency_ms
         error = BASE_ERROR_RATE
@@ -119,12 +173,34 @@ def _instance_health(component: Component) -> None:
             error += 0.2
         if instance.cpu_pct > CPU_LATENCY_THRESHOLD:
             latency += CPU_LATENCY_MS
-        instance.latency_ms = latency
-        instance.error_rate = error
+        error_added, latency_added = added.get(instance.instance_id, (0.0, 0.0))
+        instance.latency_ms = latency + latency_added
+        instance.error_rate = min(1.0, error + error_added)
 
 
-def step(state: ExchangeState, faults: list[Fault], tick: int) -> None:
+def site_effect(
+    component: Component, sites: dict[str, Any]
+) -> tuple[float, float, str] | None:
+    """Error rate, latency and reason of the standby site a component runs on, if any."""
+    config = sites.get(component.name)
+    if not config or component.site in (None, config.get("primary")):
+        return None
+    site = (config.get("standby") or {}).get(component.site) or {}
+    return (
+        float(site.get("error_rate", 0.0)),
+        float(site.get("latency_ms", 0.0)),
+        str(site.get("reason", "")),
+    )
+
+
+def step(
+    state: ExchangeState,
+    faults: list[Fault],
+    tick: int,
+    sites: dict[str, Any] | None = None,
+) -> None:
     """Advance the state to `tick` and apply every rule once."""
+    sites = sites or {}
     state.tick = tick
     _advance_instances(state)
 
@@ -150,10 +226,11 @@ def step(state: ExchangeState, faults: list[Fault], tick: int) -> None:
             if fault.started and instance.cpu_pct > BASELINE_CPU_PCT:
                 instance.cpu_pct = BASELINE_CPU_PCT
     _crash_if_out_of_memory(state)
+    added = _instance_effects(state, faults, active)
 
     for name in dependency_order(state):
         component = state.components[name]
-        _instance_health(component)
+        _instance_health(component, added)
         running = component.running_instances()
         if not running:
             component.latency_ms = component.base_latency_ms + 1000.0
@@ -165,6 +242,10 @@ def step(state: ExchangeState, faults: list[Fault], tick: int) -> None:
             component.error_rate = sum(
                 instance.error_rate for instance in running
             ) / len(running)
+        standby = site_effect(component, sites)
+        if standby is not None:
+            component.error_rate += standby[0]
+            component.latency_ms += standby[1]
 
         for dependency in component.depends_on:
             link = state.link(name, dependency)
@@ -181,7 +262,10 @@ def step(state: ExchangeState, faults: list[Fault], tick: int) -> None:
         for fault in active:
             if isinstance(fault, ChangeFault):
                 for effect in fault.effects:
-                    if effect.component == name:
+                    if (
+                        effect.component == name
+                        and _effect_instances(state, fault, effect) is None
+                    ):
                         component.error_rate += effect.error_rate
                         component.latency_ms += effect.latency_ms
             elif isinstance(fault, DataFault) and fault.component == name:

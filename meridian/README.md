@@ -29,7 +29,7 @@ actions on them without an approval. The topology lives in
 | `model.py` | Components, instances, links and changes (the state). |
 | `rules.py` | What happens on every tick: resource pressure, cut links, error rates, queues, latency. |
 | `faults.py` | Five fault mechanisms: `link`, `resource`, `change`, `data`, `noise`. |
-| `actions.py` | Restart, rollback and the executor (audit log, idempotency keys, approvals, lost responses). |
+| `actions.py` | Restart, rollback, isolation, failover and the executor (audit log, idempotency keys, approvals, lost responses). |
 | `signals.py` | Metrics, logs, alerts and tickets generated from the state. |
 | `clock.py` | Simulated time and the trading session. |
 | `tools.py` | The tools agents can use. Every call is traced and moves time forward. |
@@ -102,6 +102,28 @@ memory_seed:                          # Session 4: memories written in earlier s
 actor: {role: on-call}                # Session 5: identity the agent acts as
 approver: {mode: approve_all}         # simulated human approver: approve_all, deny_all or approve_roles: [...]
 ```
+
+Cases adapted from public postmortems use these optional fields:
+
+```yaml
+sites:                                # what `failover <component>:<site>` can reach
+  order-gateway:
+    primary: A
+    standby:
+      B: {error_rate: 0.9, reason: "site B in maintenance"}   # reachable, but unhealthy
+      C: {}                                                   # healthy
+      D: {fails: true, reason: "switchover flaw"}            # the move is refused
+faults:
+  - {type: link, at: 3, site: A, source: order-gateway, target: reference-db, mode: degraded, extra_latency_ms: 200}
+  - {type: change, at: 1, effects: [{component: order-gateway, instance: order-gateway-2, error_rate: 0.8}]}
+  - {type: change, at: 1, change_id: CHG-1, trigger: rolled_back, effects: [...]}   # starts when CHG-1 is rolled back
+  - {type: change, at: 1, change_id: CHG-2, sticky: true, effects: [...]}           # stays on each instance until it restarts
+```
+
+`site` makes a fault apply only while its component runs on that site. A
+failover restarts the component's instances on the new site, so it is down for
+two ticks; isolated instances stay isolated. `isolate_instance` takes an
+instance out of service; `restart_instance` brings it back.
 
 ## Solutions
 

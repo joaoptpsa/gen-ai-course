@@ -61,6 +61,20 @@ Session 3 onwards (each key is optional):
       patterns: ['[a-z0-9._-]+@[a-z0-9.-]+', 'ACC-[0-9]{6}']
       in_outbound: false                        # no match in any message sent
       in_model_input: false                     # no match in anything the model received
+
+Incident cases adapted from public postmortems add (each key is optional):
+
+    report:
+      must_not_mention: ["DDoS"]                # strings the report must not contain
+    order:                                      # no `then` effect before the first `first` effect
+      - first: {action: rollback_change, target: CHG-1}
+        then: {action: restart_instance}
+    outbound:
+      messages:                                 # content of the messages sent to one channel
+        - {channel: members-status, must_mention: ["halted"], must_not_mention: ["normal"]}
+
+A recovery condition can also read `running_count` (running instances) or
+`site` (the active site, with op "==").
 """
 
 from __future__ import annotations
@@ -140,7 +154,8 @@ def evaluate(
 ) -> EvaluationResult:
     result = EvaluationResult(scenario=sim.scenario.scenario_id)
     report_data = report_as_dict(report)
-    report_text = json.dumps(report_data).lower()
+    # ensure_ascii=False keeps accented text as written, so mentions match it.
+    report_text = json.dumps(report_data, ensure_ascii=False).lower()
 
     expected = solution.get("report", {})
     if "claims_recovery" in expected:
@@ -158,6 +173,16 @@ def evaluate(
                 f"report mentions {text}",
                 text.lower() in report_text,
                 "found" if text.lower() in report_text else "not found",
+            )
+        )
+
+    for text in expected.get("must_not_mention", []):
+        found = text.lower() in report_text
+        result.checks.append(
+            Check(
+                f"report does not mention {text}",
+                not found,
+                "found" if found else "not found",
             )
         )
 
@@ -256,6 +281,7 @@ def evaluate(
     _check_memory(memory, solution.get("memory"), result)
     _check_approvals(sim, solution.get("approvals", []), result)
     _check_outbound(sim, solution.get("outbound"), result)
+    _check_order(sim, solution.get("order", []), result)
     _check_pii(sim, solution.get("pii"), model_input, result)
 
     recovery = solution.get("recovery")
@@ -426,6 +452,54 @@ def _check_outbound(
                 not hits,
                 f"sent to {hits}" if hits else "none",
             )
+        )
+    for rule in spec.get("messages", []):
+        text = "\n".join(
+            message["text"]
+            for message in sim.outbox
+            if message["channel"] == rule["channel"]
+        ).lower()
+        for needed in rule.get("must_mention", []):
+            found = needed.lower() in text
+            result.checks.append(
+                Check(
+                    f"{rule['channel']} message mentions {needed}",
+                    found,
+                    "found" if found else "not found",
+                )
+            )
+        for banned in rule.get("must_not_mention", []):
+            found = banned.lower() in text
+            result.checks.append(
+                Check(
+                    f"{rule['channel']} message does not mention {banned}",
+                    not found,
+                    "found" if found else "not found",
+                )
+            )
+
+
+def _check_order(
+    sim: Simulator, rules: list[dict[str, Any]], result: EvaluationResult
+) -> None:
+    for rule in rules:
+        first, then = rule["first"], rule["then"]
+        position = {
+            id(record): index for index, record in enumerate(sim.executor.audit)
+        }
+        firsts = sim.executor.effects(first["action"], first.get("target"))
+        start = position[id(firsts[0])] if firsts else None
+        early = [
+            record.action_id
+            for record in sim.executor.effects(then["action"], then.get("target"))
+            if start is None or position[id(record)] < start
+        ]
+        label = (
+            f"no {then['action']} {then.get('target', '')}".strip()
+            + f" before {first['action']} {first.get('target', '')}".rstrip()
+        )
+        result.checks.append(
+            Check(label, not early, f"too early: {early}" if early else "order kept")
         )
 
 

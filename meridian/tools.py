@@ -271,6 +271,14 @@ class MeridianTools:
                 "time": self.sim.clock.timestamp(tick),
                 "trading_session_open": self.sim.clock.is_trading_session(tick),
                 "trading_hours": f"{self.sim.state.trading_open}-{self.sim.state.trading_close}",
+                "sites": {
+                    name: {
+                        "active": self.sim.state.component(name).site,
+                        "primary": config["primary"],
+                        "standby": sorted(config.get("standby") or {}),
+                    }
+                    for name, config in self.sim.scenario.sites.items()
+                },
             }
 
         return self._run("exchange_status", {}, fn)
@@ -409,6 +417,55 @@ class MeridianTools:
             lambda: self.sim.executor.execute(
                 "rollback_change",
                 change_id,
+                idempotency_key=idempotency_key,
+                actor=self.actor,
+                confirmation_ref=confirmation_ref,
+            ),
+        )
+
+    def isolate_instance(
+        self,
+        instance_id: str,
+        idempotency_key: str | None = None,
+        confirmation_ref: str | None = None,
+    ) -> dict[str, Any]:
+        args = {
+            "instance_id": instance_id,
+            "idempotency_key": idempotency_key,
+            "confirmation_ref": confirmation_ref,
+        }
+        return self._run(
+            "isolate_instance",
+            args,
+            lambda: self.sim.executor.execute(
+                "isolate_instance",
+                instance_id,
+                idempotency_key=idempotency_key,
+                actor=self.actor,
+                confirmation_ref=confirmation_ref,
+            ),
+        )
+
+    def failover(
+        self,
+        component: str,
+        site: str,
+        idempotency_key: str | None = None,
+        confirmation_ref: str | None = None,
+    ) -> dict[str, Any]:
+        args = {
+            "component": component,
+            "site": site,
+            "idempotency_key": idempotency_key,
+            "confirmation_ref": confirmation_ref,
+        }
+        target = f"{component}:{site}"
+        return self._run(
+            "failover",
+            args,
+            lambda: self.sim.executor.execute(
+                "failover",
+                target,
                 idempotency_key=idempotency_key,
                 actor=self.actor,
                 confirmation_ref=confirmation_ref,

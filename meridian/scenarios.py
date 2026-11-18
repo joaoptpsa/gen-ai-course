@@ -42,6 +42,8 @@ class Scenario:
     approver: dict[str, Any] = field(default_factory=lambda: {"mode": "approve_all"})
     mcp: dict[str, Any] = field(default_factory=dict)
     memory_seed: list[dict[str, Any]] = field(default_factory=list)
+    # {component: {primary: A, standby: {B: {error_rate, latency_ms, reason, fails}}}}: what failover can do
+    sites: dict[str, Any] = field(default_factory=dict)
     path: Path | None = None
 
 

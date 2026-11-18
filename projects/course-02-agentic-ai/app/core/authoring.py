@@ -38,6 +38,7 @@ CHECK_KEYS = {
     "min_effects",
     "budget",
     "pii",
+    "order",
 }
 
 SCENARIO_REQUIRED_KEYS = ("id", "title", "incident")

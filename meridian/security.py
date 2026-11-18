@@ -48,12 +48,14 @@ def describe_action(
     state = sim.state
     component = None
     try:
-        if action == "restart_instance":
+        if action in ("restart_instance", "isolate_instance"):
             component = state.instance(target)[0]
         elif action == "restart_service":
             component = state.component(target)
         elif action == "rollback_change":
             component = state.component(state.change(target).component)
+        elif action == "failover":
+            component = state.component(target.partition(":")[0])
     except KeyError:
         component = None
 

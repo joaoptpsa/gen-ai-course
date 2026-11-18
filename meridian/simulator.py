@@ -27,6 +27,8 @@ class Simulator:
         self.scenario = scenario
         self.rng = random.Random(scenario.seed)
         self.state: ExchangeState = load_topology(overrides=scenario.initial)
+        for name, config in scenario.sites.items():
+            self.state.component(name).site = config["primary"]
         self.clock = SimClock(
             start_minutes=parse_hhmm(scenario.start_time) - scenario.warmup_ticks,
             trading_open=parse_hhmm(self.state.trading_open),
@@ -79,7 +81,7 @@ class Simulator:
             if change.kind == "deploy" and change.version_after:
                 state.component(change.component).version = change.version_after
 
-        rules.step(state, self.faults, tick)
+        rules.step(state, self.faults, tick, self.scenario.sites)
 
         for entry in self.scenario.alerts:
             if entry["at"] == tick:
@@ -113,9 +115,16 @@ class Simulator:
     def _active_reasons(self) -> dict[str, str]:
         reasons: dict[str, str] = {}
         for fault in self.faults:
-            if isinstance(fault, ChangeFault) and fault.is_active(self.state):
+            # A rolled-back sticky change still hurts the instances it reached, so it still logs.
+            if isinstance(fault, ChangeFault) and (
+                fault.is_active(self.state) or fault.stuck
+            ):
                 for effect in fault.effects:
                     reasons[effect.component] = effect.reason
+        for name in self.scenario.sites:
+            standby = rules.site_effect(self.state.component(name), self.scenario.sites)
+            if standby is not None and standby[2]:
+                reasons[name] = standby[2]
         return reasons
 
     def _apply_noise(self, tick: int) -> None:

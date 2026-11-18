@@ -26,7 +26,7 @@ RESTART_TICKS = 2
 @dataclass
 class Instance:
     instance_id: str
-    status: str = "running"  # running | restarting
+    status: str = "running"  # running | restarting | isolated
     memory_pct: float = BASELINE_MEMORY_PCT
     cpu_pct: float = BASELINE_CPU_PCT
     restart_ticks_left: int = 0
@@ -49,9 +49,14 @@ class Component:
     latency_ms: float = 0.0
     error_rate: float = BASE_ERROR_RATE
     queue_depth: float = 0.0
+    site: str | None = None  # active site, when the scenario gives the component sites
 
     def running_instances(self) -> list[Instance]:
         return [instance for instance in self.instances if instance.status == "running"]
+
+    @property
+    def running_count(self) -> int:
+        return len(self.running_instances())
 
 
 @dataclass
