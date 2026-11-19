@@ -160,7 +160,7 @@ instructor's material.
 | `s05-*` | The lab's per-exercise user request lives in `incident.summary`; its controls are the harness's job. |
 | `s07-site-a-carrier` | The lab's fix is moving order-gateway to site C; site B (in maintenance) is the wrong failover. |
 | `s08-resume-lost-response` | The lab's crash becomes a lost rollback response on a change that needs the incident manager's approval. A blind second rollback has no effect in the simulator, so the check cannot catch one. |
-| `s09-alert-storm` | `budget.max_input_tokens: 60000` is an estimate, not a measured limit. |
+| `s09-alert-storm` | `budget.max_input_tokens: 60000` is an estimate, not a measured limit. Its source lab, the alert storm of the old session 9 (`09-efficiency`), was withdrawn upstream, so no instructor material will settle it. |
 | `ext-*` | Each adaptation's comment says what it keeps and drops from the source. "Halt" or "do not reopen" decisions become a message and no recovery claim, since the simulator has no halt. |
 
 `must_not_mention` matches substrings, so "not a DDoS" contains "DDoS". These
