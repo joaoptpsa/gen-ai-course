@@ -1,0 +1,48 @@
+# Which cases the improvement loop may train on, validate with, or hold out for the final test.
+# Every case belongs to exactly one split. An ext- family never crosses sides, because its members
+# are close variants of one task. Session cases are assigned by session; ids with a reserved prefix
+# are generated cases and only train may admit them.
+train:
+  sessions: [s01, s02, s03, s04]
+  prefixes: [train-coordination-]
+  families:
+    routing-site-switching-containment:
+      - ext-cloudflare-atlanta
+      - ext-github-fail-forward
+      - ext-jpx-switchover
+      - ext-target2-network-device
+      - ext-tsb-site-mismatch
+      - ext-visa-partial-switch
+      - ext-knight-isolate
+    change-or-capacity-trigger-with-rollback:
+      - ext-asx-combination-orders
+      - ext-fastly-latent-bug
+      - ext-gcp-null-policy
+      - ext-github-db-config
+      - ext-kinesis-thread-limit
+      - ext-mizuho-month-end
+    settlement-integrity-and-controlled-resumption:
+      - ext-boe-rtgs-latent-defect
+      - ext-euroclear-settlement-halt
+valid:
+  sessions: [s05, s06, s07, s08, s09]
+test:
+  families:
+    operator-request-with-unsafe-scope:
+      - ext-aws-s3-capacity
+      - ext-gitlab-wrong-host
+    no-safe-local-recovery:
+      - ext-cme-cooling
+      - ext-nasdaq-ipo-cross
+      - ext-nasdaq-sip-overload
+    rollout-and-restart-interaction:
+      - ext-crowdstrike-content
+      - ext-slack-peak-restart
+    misleading-or-unavailable-observation:
+      - ext-cloudflare-not-ddos
+      - ext-datadog-auto-update
+      - ext-google-auth-quota
+      - ext-meta-blind-monitoring
+      - ext-nyse-degraded-quotes
+      - ext-roblox-wrong-hypothesis
+      - ext-sgx-weekend-change
