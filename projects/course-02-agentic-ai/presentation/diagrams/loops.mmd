@@ -1,0 +1,30 @@
+---
+config:
+  layout: dagre
+  look: classic
+  flowchart:
+    wrappingWidth: 320
+---
+flowchart LR
+  runs[("Execuções<br/>+ traces OTel")]
+  critic["Crítico<br/>culpa um agente ou handoff"]
+  versions["1. Versões<br/>muda UM agente"]
+  lessons["2. Lições<br/>memória por papel"]
+  cases["3. Casos novos<br/>a partir de falhas"]
+  gate{"Treino ganha?<br/>Validação sem regressão?"}
+
+  runs --> critic
+  critic --> versions
+  versions --> gate
+  gate -->|"sim: nova versão"| runs
+  runs -->|"após cada incidente"| lessons
+  lessons -->|"lida antes de agir"| runs
+  critic --> cases
+  cases -->|"revisão humana,<br/>só no treino"| runs
+
+  classDef agent fill:#1168bd,stroke:#5b9bd5,color:#ffffff
+  classDef gate fill:#b85c00,stroke:#e0a060,color:#ffffff
+  classDef store fill:#4a4a4a,stroke:#9a9a9a,color:#ffffff
+  class critic,versions,lessons,cases agent
+  class gate gate
+  class runs store

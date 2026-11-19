@@ -1,0 +1,40 @@
+#!/bin/bash
+set -euo pipefail
+
+# Renders presentation/: each diagrams/*.mmd to PNG, then proposta.md to PDF and PPTX.
+# Needs mmdc and marp from mise (both declared in the dotfiles' mise config).
+
+PROJECT_DIR=$(dirname -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")")
+PRESENTATION_DIR=$PROJECT_DIR/presentation
+DECK=$PRESENTATION_DIR/proposta.md
+# puppeteer loads a .puppeteerrc.cjs from its working directory upwards, so mmdc runs outside the checkout.
+MERMAID_CLI_WORK_DIR=$HOME/.cache/mermaid-cli
+
+render_diagram() {
+  local source=$1
+  local target=${source%.mmd}.png
+
+  mise exec npm:@mermaid-js/mermaid-cli -- \
+    sh -c 'mkdir -p "$1" && cd "$1" && shift && exec mmdc "$@"' sh "$MERMAID_CLI_WORK_DIR" \
+    --quiet --input "$source" --output "$target" --scale 3 --backgroundColor white
+}
+
+render_deck() {
+  local format=$1
+
+  # --allow-local-files lets the headless browser read the diagram images next to the deck.
+  mise exec npm:@marp-team/marp-cli -- \
+    marp --no-stdin --allow-local-files "--$format" --output "${DECK%.md}.$format" "$DECK"
+}
+
+main() {
+  local diagram
+
+  for diagram in "$PRESENTATION_DIR"/diagrams/*.mmd; do
+    render_diagram "$diagram"
+  done
+  render_deck pdf
+  render_deck pptx
+}
+
+main "$@"

@@ -1,0 +1,35 @@
+---
+config:
+  layout: dagre
+  look: classic
+  flowchart:
+    wrappingWidth: 320
+---
+flowchart LR
+  input(["Alerta, ticket<br/>ou reclamação"])
+  orchestrator["Orquestrador"]
+  network["Rede"]
+  database["Base de dados"]
+  remediation["Remediação"]
+  approval{"Aprovação<br/>do on-call"}
+  simulator[("Simulador<br/>Meridian")]
+  reviewer["Revisor<br/>lê o estado real e<br/>só então dá por resolvido"]
+
+  input --> orchestrator
+  orchestrator --> network
+  orchestrator --> database
+  network -->|"NetworkFinding"| orchestrator
+  database -->|"Finding"| orchestrator
+  orchestrator -->|"com a evidência"| remediation
+  remediation --> approval
+  approval -->|"aprovada"| simulator
+  remediation -->|"RemediationReport"| orchestrator
+  simulator --> reviewer
+  reviewer -->|"ainda não:<br/>mais uma tentativa"| remediation
+
+  classDef agent fill:#1168bd,stroke:#5b9bd5,color:#ffffff
+  classDef gate fill:#b85c00,stroke:#e0a060,color:#ffffff
+  classDef store fill:#4a4a4a,stroke:#9a9a9a,color:#ffffff
+  class orchestrator,network,database,remediation,reviewer agent
+  class approval gate
+  class simulator store
