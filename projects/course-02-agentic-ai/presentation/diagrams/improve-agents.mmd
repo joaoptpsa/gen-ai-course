@@ -1,0 +1,26 @@
+---
+config:
+  layout: dagre
+  theme: base
+  themeVariables:
+    fontSize: "24px"
+    lineColor: "#475569"
+  flowchart:
+    nodeSpacing: 30
+    rankSpacing: 55
+---
+flowchart LR
+  lessons["Lições do incidente"]
+  memory["Guardar na memória"]
+  reuse["Consultar no próximo incidente"]
+  change["Alterar um agente"]
+  test["Testar a versão"]
+  select["Selecionar a versão"]
+
+  lessons --> memory --> reuse
+  change --> test --> select
+
+  classDef memory fill:#0f766e,stroke:#0f766e,color:#ffffff
+  class lessons,memory,reuse memory
+  classDef version fill:#1d4ed8,stroke:#1d4ed8,color:#ffffff
+  class change,test,select version

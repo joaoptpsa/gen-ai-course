@@ -1,0 +1,21 @@
+---
+config:
+  layout: dagre
+  theme: base
+  themeVariables:
+    fontSize: "24px"
+    lineColor: "#475569"
+  flowchart:
+    nodeSpacing: 30
+    rankSpacing: 55
+---
+flowchart LR
+  failure["Falha num caso de treino"]
+  draft["Propor novo caso"]
+  review{{"Revisão humana"}}
+  training[("Conjunto de treino")]
+
+  failure --> draft --> review -->|"se aprovado"| training
+
+  classDef training fill:#92400e,stroke:#92400e,color:#ffffff
+  class failure,draft,review,training training

@@ -18,9 +18,9 @@ flowchart LR
   orchestrator["Orquestrador"]
   network["Rede<br/>(só leitura)"]
   database["Base de dados<br/>(só leitura)"]
-  remediation["Remediação<br/>(única que atua)"]
-  reviewer["Revisor<br/>(só leitura)"]
-  approval{{"Aprovação<br/>por papel<br/>(se crítica)"}}
+  remediation["Operações"]
+  reviewer["Revisor"]
+  approval{{"Aprovação humana<br/>simulada"}}
   simulator[("Simulador<br/>Meridian")]
 
   input --> orchestrator
@@ -28,13 +28,14 @@ flowchart LR
   network -->|"diagnóstico"| orchestrator
   orchestrator --> database
   database -->|"diagnóstico"| orchestrator
-  orchestrator -->|"tarefa<br/>(+1 se falhar)"| remediation
+  orchestrator -->|"mitigar"| remediation
   remediation -->|"relatório"| orchestrator
   remediation --> approval
   approval -->|"aprovado"| simulator
+  remediation -->|"ação sem aprovação exigida"| simulator
   orchestrator -->|"verificar"| reviewer
-  simulator -->|"estado real"| reviewer
-  reviewer -->|"veredito"| orchestrator
+  simulator -->|"estado"| reviewer
+  reviewer -->|"resultado"| orchestrator
 
   classDef inputNode fill:#ffffff,stroke:#333333,color:#222222
   classDef agent fill:#1168bd,stroke:#5b9bd5,color:#ffffff

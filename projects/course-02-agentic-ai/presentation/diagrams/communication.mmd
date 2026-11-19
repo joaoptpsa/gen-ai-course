@@ -1,0 +1,33 @@
+---
+config:
+  layout: dagre
+  look: classic
+  theme: base
+  themeVariables:
+    fontSize: "20px"
+    lineColor: "#333333"
+    edgeLabelBackground: "#e8e8e8"
+    primaryTextColor: "#222222"
+  flowchart:
+    wrappingWidth: 240
+    nodeSpacing: 34
+    rankSpacing: 72
+---
+flowchart LR
+  options["Opções"]
+  handoffs["Handoff direto"]
+  a2a["A2A · LA8"]
+  queue["Filas de pedidos e resultados"]
+  local["Checkpoints em disco local"]
+  shared["Checkpoints em armazenamento partilhado"]
+
+  options --> handoffs
+  options --> a2a
+  options --> queue
+  options --> local
+  options --> shared
+
+  classDef step fill:#1168bd,stroke:#5b9bd5,color:#ffffff
+  classDef store fill:#4a4a4a,stroke:#9a9a9a,color:#ffffff
+  class options step
+  class handoffs,a2a,queue,local,shared store

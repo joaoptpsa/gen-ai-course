@@ -1,38 +1,32 @@
 ---
 config:
   layout: dagre
-  look: classic
   theme: base
   themeVariables:
-    fontSize: "20px"
-    lineColor: "#333333"
-    edgeLabelBackground: "#e8e8e8"
-    primaryTextColor: "#222222"
+    fontSize: "24px"
+    lineColor: "#475569"
   flowchart:
-    wrappingWidth: 260
-    nodeSpacing: 52
-    rankSpacing: 84
+    nodeSpacing: 30
+    rankSpacing: 55
 ---
 flowchart LR
-  runs[("Execuções<br/>e traces OTel")]
-  critic["Crítico<br/>aponta agente ou handoff"]
-  versions["Versões<br/>altera um agente"]
-  lessons["Lições<br/>memória por papel"]
-  cases["Novos casos<br/>a partir de falhas"]
-  gate{{"Treino melhora?<br/>Sem regressão<br/>na validação?"}}
+  execution["Orquestrador e equipa"]
+  evidence["Resultados e traces"]
+  memory["Memória"]
+  versions["Versões"]
+  cases["Casos de treino"]
+  future["Execuções futuras"]
 
-  runs --> critic
-  critic --> versions
-  versions --> gate
-  gate -->|"sim: nova versão"| runs
-  runs -->|"após incidente"| lessons
-  lessons -->|"antes de atuar"| runs
-  critic --> cases
-  cases -->|"revisão humana,<br/>só no treino"| runs
+  execution --> evidence
+  evidence --> memory & versions & cases
+  memory & versions & cases --> future
+  future --> execution
 
-  classDef agent fill:#1168bd,stroke:#5b9bd5,color:#ffffff
-  classDef gate fill:#b85c00,stroke:#e0a060,color:#ffffff
-  classDef store fill:#4a4a4a,stroke:#9a9a9a,color:#ffffff
-  class critic,versions,lessons,cases agent
-  class gate gate
-  class runs store
+  classDef neutral fill:#334155,stroke:#334155,color:#ffffff
+  class execution,evidence,future neutral
+  classDef memory fill:#0f766e,stroke:#0f766e,color:#ffffff
+  class memory memory
+  classDef version fill:#1d4ed8,stroke:#1d4ed8,color:#ffffff
+  class versions version
+  classDef training fill:#92400e,stroke:#92400e,color:#ffffff
+  class cases training

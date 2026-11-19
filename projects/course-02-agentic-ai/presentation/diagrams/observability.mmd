@@ -1,0 +1,30 @@
+---
+config:
+  layout: dagre
+  look: classic
+  theme: base
+  themeVariables:
+    fontSize: "20px"
+    lineColor: "#333333"
+    edgeLabelBackground: "#e8e8e8"
+    primaryTextColor: "#222222"
+  flowchart:
+    wrappingWidth: 240
+    nodeSpacing: 34
+    rankSpacing: 72
+---
+flowchart LR
+  execution["Execução"]
+  trace["Trace OpenTelemetry<br/>duração, falhas e custo"]
+  file[("Ficheiro por execução")]
+  tempo[("Tempo")]
+  grafana["Grafana"]
+
+  execution --> trace
+  trace --> file
+  trace --> tempo --> grafana
+
+  classDef step fill:#1168bd,stroke:#5b9bd5,color:#ffffff
+  classDef store fill:#4a4a4a,stroke:#9a9a9a,color:#ffffff
+  class execution,trace,grafana step
+  class file,tempo store
