@@ -80,6 +80,9 @@ class RunRecord:
     # Records saved before tracing have no trace, hence the defaults.
     trace_id: str = ""
     spans_file: str | None = None
+    # Set for team harnesses: the content fingerprint of the resolved team and its topology.
+    team_version: str = ""
+    topology: str = ""
     # Masked span records; saved to their own file (spans_file), never inside the record.
     spans: list[dict[str, Any]] = field(default_factory=list)
 
@@ -199,6 +202,9 @@ def run_case(
         "meridian.commit": commit,
         "meridian.dirty": dirty,
     }
+    describe_run = getattr(harness, "run_attributes", None)
+    harness_attributes: dict[str, str] = describe_run() if describe_run else {}
+    root_attributes.update(harness_attributes)
     started_at = _now()
     started = datetime.now(timezone.utc)
     with telemetry.run_span(tracing, root_attributes) as run_trace:
@@ -240,6 +246,8 @@ def run_case(
             {"kind": kind, "text": text} for kind, text in model_trace(run.messages)
         ],
         trace_id=run_trace.trace_id,
+        team_version=harness_attributes.get("meridian.team_version", ""),
+        topology=harness_attributes.get("meridian.topology", ""),
         spans=run_trace.spans,
     )
 

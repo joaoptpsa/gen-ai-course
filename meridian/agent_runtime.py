@@ -8,7 +8,10 @@ also define:
 - `build_toolsets(deps) -> list`: toolsets created for this run, e.g. the
   simulated MCP servers, which must share this run's simulator (Session 3);
 - `after_run(report, deps)`: called once the agent has finished, e.g. to
-  write a shift handover note to memory (Session 4).
+  write a shift handover note to memory (Session 4);
+- `run_agent(agent, prompt, *, deps, usage_limits, toolsets) -> report`: runs
+  the agent in place of `agent.run_sync`, e.g. a team that fixes its order in code;
+- `run_attributes() -> dict`: extra attributes for the run's root span.
 Sessions keep their harness files next to their exercises; this module only
 provides the plumbing to load a harness, run it and print the trace.
 """
@@ -79,12 +82,16 @@ class IncidentDeps:
 
     - `tools`: the simulator tools (and through them `sim`);
     - `memory`: the persistent memory store, or None when memory is disabled;
-    - `identity`: who the agent acts as: role, name and team.
+    - `identity`: who the agent acts as: role, name and team;
+    - `extra_messages`: model messages of nested agent runs, counted with the run's own;
+    - `scratch`: state a harness keeps for this run only.
     """
 
     tools: MeridianTools
     memory: MemoryStore | None = None
     identity: dict[str, Any] = field(default_factory=lambda: identity_for("first-line"))
+    extra_messages: list[ModelMessage] = field(default_factory=list)
+    scratch: dict[str, Any] = field(default_factory=dict)
 
     @property
     def sim(self) -> Simulator:
@@ -203,13 +210,14 @@ def run_incident(
     report, error = None, None
     with capture_run_messages() as messages:
         try:
-            result = agent.run_sync(
-                build_prompt(brief, deps),
-                deps=deps,
-                usage_limits=UsageLimits(request_limit=max_requests),
-                toolsets=toolsets,
-            )
-            report = result.output
+            prompt = build_prompt(brief, deps)
+            usage_limits = UsageLimits(request_limit=max_requests)
+            execute = getattr(harness, "run_agent", None)
+            if execute is not None:
+                report = execute(agent, prompt, deps=deps, usage_limits=usage_limits, toolsets=toolsets)
+            else:
+                result = agent.run_sync(prompt, deps=deps, usage_limits=usage_limits, toolsets=toolsets)
+                report = result.output
         except UsageLimitExceeded as exceeded:
             error = f"stopped: {exceeded}"
         except AgentRunError as failure:
@@ -218,12 +226,13 @@ def run_incident(
     if report is not None and hasattr(harness, "after_run"):
         harness.after_run(report, deps)
 
-    run = IncidentRun(scenario.scenario_id, Path(harness.__file__).name, brief, report, tools.trace, sim, error, list(messages))
+    all_messages = [*messages, *deps.extra_messages]
+    run = IncidentRun(scenario.scenario_id, Path(harness.__file__).name, brief, report, tools.trace, sim, error, all_messages)
     run.extra["end_tick"] = sim.state.tick
     run.extra["identity"] = identity
     run.extra["memory"] = memory
-    run.extra["input_tokens"] = sum(message.usage.input_tokens for message in messages if isinstance(message, ModelResponse))
-    run.extra["requests"] = sum(1 for message in messages if isinstance(message, ModelResponse))
+    run.extra["input_tokens"] = sum(message.usage.input_tokens for message in all_messages if isinstance(message, ModelResponse))
+    run.extra["requests"] = sum(1 for message in all_messages if isinstance(message, ModelResponse))
     solution_path = find_solution(scenario.scenario_id, solutions_dir, scenario_path)
     if solution_path is not None:
         run.evaluation = evaluate(
@@ -232,7 +241,7 @@ def run_incident(
             report,
             load_solution(solution_path),
             memory=memory,
-            model_input=model_input_text(list(messages)),
+            model_input=model_input_text(all_messages),
             input_tokens=run.extra["input_tokens"],
         )
     return run

@@ -1,629 +1,392 @@
-"""The incident team: the agents, their tools, and the room they work in.
+"""The incident team on the workbench: five agents, typed handoffs, two topologies.
 
-Agents (the lab gives you these four):
-- network:     reads links, recent changes, gateway logs. Changes nothing.
-- database:    reads reference-db, its logs and the tickets (planned work). Changes nothing.
-- remediation: acts: roll back a change, move the gateway to another site. Every action needs the on-call's approval.
-- reviewer:    reads the real state after the work and says whether the incident is over.
-
-You write how they work together:
-- starter/pipeline.py:  a fixed sequence, in code.
-- starter/orchestrator.py: an agent that decides whom to ask, and when.
-
-Team.ask(name, message) sends a message to one agent and returns its answer as text. Everything an agent does
-appears live on the board: who is working, what it reads, what it asks the on-call to approve.
+Each agent is a PydanticAI agent named exactly like its role, so its `invoke_agent` span carries
+`gen_ai.agent.name=<role>`. In the orchestrator topology the specialists run inside the
+orchestrator's `ask_<role>` tool calls, so their spans nest under the tool call; the pipeline runs
+the same calls in Python. Both topologies use `invoke_role`, one simulator and one request budget.
 """
 
 from __future__ import annotations
 
 import asyncio
-import importlib.util
-import json
-import os
-import sys
-import threading
-import time
-from dataclasses import dataclass, field
+from collections.abc import Sequence
 from typing import Any, Literal
 
-from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext
-from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
-from pydantic_ai.usage import UsageLimits
-from world import HERE, World
-
-STARTER = HERE.parent / "starter"
-SOLUTIONS = (
-    HERE.parents[3] / "private" / "course-02-agentic-ai" / "reference" / "session-07"
+from agent.offline import is_offline, offline_model
+from agent.team_tools import (
+    MAX_ERROR_RATE,
+    MAX_LATENCY_MS,
+    TOOL_FUNCTIONS,
+    ReviewFact,
+    RoleResult,
+    Seat,
+    TeamState,
+    state_recovered,
 )
-APPROVAL_TIMEOUT_S = 300
-MAX_TOOL_CALLS = (
-    6  # reads per agent; after that the tools answer "answer now with what you found"
-)
-MAX_STEPS = (
-    12  # model requests per agent; an agent that goes round in circles stops here
-)
+from agent.versions import Role, TeamVersion
+from opentelemetry import trace
+from pydantic import BaseModel, Field
+from pydantic_ai import Agent, ModelRetry, RunContext, capture_run_messages
+from pydantic_ai.exceptions import AgentRunError
+from pydantic_ai.messages import ModelResponse
+from pydantic_ai.toolsets import FunctionToolset
+from pydantic_ai.usage import RunUsage, UsageLimits
+
+from meridian.agent_runtime import IncidentDeps
+
+SPECIALISTS: tuple[Role, ...] = ("network", "database", "remediation", "reviewer")
+HEALTHY_READINGS = 3
+TRACER = trace.get_tracer("meridian.team")
+
+# What the agents return ------------------------------------------------------------------------
 
 
-def use_solutions() -> bool:
-    """Trainer only: LAB_SOLUTIONS=1 runs the solutions instead of starter/, without touching starter/."""
-    return os.environ.get("LAB_SOLUTIONS") == "1" and SOLUTIONS.is_dir()
-
-
-def load_starter(name: str):
-    folder = SOLUTIONS if use_solutions() else STARTER
-    spec = importlib.util.spec_from_file_location(f"s07_{name}", folder / f"{name}.py")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[f"s07_{name}"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-# What the agents return -------------------------------------------------------------------------
+class NetworkFinding(BaseModel):
+    cause: str = Field(description="The cause; names the affected component.")
+    components: list[str] = Field(description="The affected components.")
+    evidence: list[str] = Field(description="evidence_ref values and quoted ids.")
 
 
 class Finding(BaseModel):
     cause: str
     evidence: list[str]
-    constraints: list[str]  # facts that limit what the others may do
-
-
-class NetworkFinding(BaseModel):
-    cause: str
-    evidence: list[str]
+    constraints: list[str] = Field(
+        description="Facts that limit what the others may do, e.g. a maintenance window."
+    )
 
 
 class RemediationReport(BaseModel):
-    status: Literal["resolved", "not_resolved"]
+    status: Literal["resolved", "unresolved"]
     actions: list[str]
     summary: str
 
 
 class Review(BaseModel):
-    recovered: bool
+    status: Literal["resolved", "unresolved"]
     reason: str
+
+    @property
+    def recovered(self) -> bool:
+        return self.status == "resolved"
 
 
 class Outcome(BaseModel):
-    """What the orchestrator reports at the end."""
+    """What the team reports at the end."""
 
     status: Literal["resolved", "unresolved"]
     root_cause: str
     summary: str
 
 
-# The room ---------------------------------------------------------------------------------------
-
-
-@dataclass
-class Team:
-    model: Any
-    incident: str
-    approvals: Literal["auto", "human"] = "auto"
-    reviewer: bool = False
-    world: World = field(init=False)
-    cards: dict[str, dict[str, str]] = field(
-        default_factory=dict
-    )  # agent -> {status, activity}
-    feed: list[dict[str, str]] = field(
-        default_factory=list
-    )  # messages, actions and approvals, in order
-    pending: dict[str, Any] | None = None  # an approval waiting for the on-call
-    reported: str = "no report"
-    outcome: Outcome | None = None
-    error: str | None = None
-    running: bool = False
-    seconds: float = 0.0
-    requests: int = 0
-    tokens: int = 0
-    sender: str = "pipeline"  # who sends the messages of Team.ask
-
-    def __post_init__(self) -> None:
-        self.world = World(self.incident)
-        self._lock = threading.Lock()
-        info = (
-            self.world.sim.incident_brief()
-        )  # fixed at the start: the incident began at this time
-        self.brief = f"Incident {info['incident_id']} ({info['time']}): {info['summary']} Related alert: {info['alert_id']}."
-
-    # The board -------------------------------------------------------------------------------
-
-    def set_card(self, agent: str, status: str, activity: str = "") -> None:
-        self.cards[agent] = {"status": status, "activity": activity}
-
-    def post(self, sender: str, to: str, text: str, kind: str = "message") -> None:
-        self.feed.append(
-            {
-                "time": self.world.sim.clock.label(self.world.sim.state.tick),
-                "from": sender,
-                "to": to,
-                "text": text,
-                "kind": kind,
-            }
-        )
-
-    # Talking to an agent ---------------------------------------------------------------------
-
-    async def ask(self, name: str, message: str) -> str:
-        """Send `message` to one agent (network, database, remediation, reviewer) and return its answer as text."""
-        if name not in AGENTS:
-            raise ValueError(f"Unknown agent {name!r}. Agents: {', '.join(AGENTS)}")
-        self.post(self.sender, name, message)
-        self.set_card(name, "working", "Reading the task…")
-        try:
-            result = await build(name, self).run(
-                message,
-                deps=Seat(self, name),
-                usage_limits=UsageLimits(request_limit=MAX_STEPS),
-            )
-        except (UsageLimitExceeded, UnexpectedModelBehavior):
-            return self._gave_up(name)
-        except Exception as error:
-            self.set_card(name, "error", str(error)[:200])
-            raise
-        with self._lock:
-            usage = result.usage
-            self.requests += usage.requests
-            self.tokens += (usage.input_tokens or 0) + (usage.output_tokens or 0)
-        answer = result.output
-        if isinstance(answer, RemediationReport):
-            self.reported = "resolved" if answer.status == "resolved" else "unresolved"
-        text = render(answer)
-        self.set_card(name, "done", text)
-        self.post(name, self.sender, text, "answer")
-        return text
-
-    def _gave_up(self, name: str) -> str:
-        """An agent used all its steps without an answer: the team goes on without it."""
-        with self._lock:
-            self.requests += MAX_STEPS
-        text = f"No answer: {name} stopped without finishing (too many steps or invalid tool calls)."
-        self.set_card(name, "error", text)
-        self.post(name, self.sender, text, "answer")
-        return text
-
-    # Approvals: the on-call engineer ---------------------------------------------------------
-
-    def ask_approval(
-        self, agent: str, action: str, target: str, reason: str
-    ) -> tuple[str | None, str]:
-        """Blocks the agent until the on-call answers. Returns (approval_ref or None, comment)."""
-        self.post(agent, "on-call", f"Approve {action} {target}? {reason}", "approval")
-        if self.approvals == "auto":
-            self.post("on-call", agent, "Approved (auto).", "approved")
-            return self.world.approve(action, target, reason, "auto"), ""
-        decided = threading.Event()
-        self.pending = {
-            "agent": agent,
-            "action": action,
-            "target": target,
-            "reason": reason,
-            "event": decided,
-            "approved": False,
-            "comment": "",
-        }
-        self.set_card(agent, "waiting", f"Waiting for your approval: {action} {target}")
-        self.set_card("on-call", "waiting", f"{agent} asks: {action} {target}")
-        answered = decided.wait(APPROVAL_TIMEOUT_S)
-        pending, self.pending = self.pending, None
-        approved = answered and pending["approved"]
-        comment = pending["comment"] if answered else "No answer from the on-call."
-        self.set_card(
-            "on-call",
-            "done",
-            ("Approved" if approved else "Rejected")
-            + f": {action} {target}"
-            + (f" — {comment}" if comment else ""),
-        )
-        self.set_card(
-            agent,
-            "working",
-            "Approved, acting…" if approved else "Rejected, changing the plan…",
-        )
-        self.post(
-            "on-call",
-            agent,
-            ("Approved." if approved else "Rejected.")
-            + (f" {comment}" if comment else ""),
-            "approved" if approved else "rejected",
-        )
-        return (
-            self.world.approve(action, target, reason, "on-call") if approved else None
-        ), comment
-
-    def answer(self, approved: bool, comment: str = "") -> None:
-        """Called by the app when the on-call clicks."""
-        if self.pending:
-            self.pending.update(approved=approved, comment=comment.strip())
-            self.pending["event"].set()
-
-    # Running a pattern -------------------------------------------------------------------------
-
-    def start(self, pattern) -> threading.Thread:
-        """Run `pattern(team)` (an async function) in the background, so the board can update live."""
-        self.running = True
-        thread = threading.Thread(target=self._run, args=(pattern,), daemon=True)
-        thread.start()
-        return thread
-
-    def _run(self, pattern) -> None:
-        began = time.monotonic()
-        try:
-            asyncio.run(self._main(pattern))
-        except NotImplementedError as missing:
-            self.error = f"Not written yet: {missing or 'this starter file'}. Write it, save the file and click Run again."
-        except Exception as error:  # noqa: BLE001 - keep the board when a run fails
-            self.error = f"{type(error).__name__}: {error}"
-        finally:
-            self.seconds = round(time.monotonic() - began, 1)
-            self.running = False
-
-    async def _main(self, pattern) -> None:
-        self.model = patient(self.model)
-        await pattern(self)
-        if self.reviewer:
-            await self.review()
-
-    async def review(self) -> None:
-        """The reviewer checks the real state. If it is not over, remediation gets one more try."""
-        for attempt in range(2):
-            self.sender = "team"
-            verdict = await self._review()
-            if verdict.recovered:
-                self.reported = "resolved"
-                return
-            self.reported = "unresolved"
-            if attempt == 0:
-                self.sender = "reviewer"
-                await self.ask(
-                    "remediation",
-                    f"{self.brief}\nThe reviewer checked the real state: the incident is NOT over. {verdict.reason} Fix it.",
-                )
-
-    async def _review(self) -> Review:
-        self.post("team", "reviewer", "Is the incident over? Check the real state.")
-        self.set_card("reviewer", "working", "Checking the real state…")
-        try:
-            result = await build("reviewer", self).run(
-                "Is the incident over? Check the real state.",
-                deps=Seat(self, "reviewer"),
-                usage_limits=UsageLimits(request_limit=MAX_STEPS),
-            )
-        except (UsageLimitExceeded, UnexpectedModelBehavior):
-            self._gave_up("reviewer")
-            return Review(
-                recovered=False, reason="The reviewer could not finish its check."
-            )
-        verdict = result.output
-        self.set_card(
-            "reviewer",
-            "done",
-            ("Recovered. " if verdict.recovered else "NOT recovered. ")
-            + verdict.reason,
-        )
-        self.post(
-            "reviewer",
-            "team",
-            ("Recovered. " if verdict.recovered else "Not recovered. ")
-            + verdict.reason,
-            "answer",
-        )
-        return verdict
-
-
-def patient(model: Any) -> Any:
-    """An OpenAI model that retries more when rate-limited (a class of students may share one key).
-    Built inside the run's event loop, because the HTTP client belongs to it."""
-    if not (isinstance(model, str) and model.startswith("openai:")):
-        return model
-    from openai import AsyncOpenAI
-    from pydantic_ai.models.openai import OpenAIChatModel
-    from pydantic_ai.providers.openai import OpenAIProvider
-
-    return OpenAIChatModel(
-        model.removeprefix("openai:"),
-        provider=OpenAIProvider(openai_client=AsyncOpenAI(max_retries=6)),
-    )
-
-
-def render(answer: Any) -> str:
-    if isinstance(answer, NetworkFinding | Finding):
-        text = f"Cause: {answer.cause}\nEvidence: {'; '.join(answer.evidence) or '-'}"
-        return text + (
-            f"\nConstraints: {'; '.join(answer.constraints)}"
-            if getattr(answer, "constraints", None)
-            else ""
-        )
-    if isinstance(answer, RemediationReport):
-        return f"{answer.status}. Actions: {'; '.join(answer.actions) or 'none'}. {answer.summary}"
-    if isinstance(answer, BaseModel):
-        return json.dumps(answer.model_dump())
-    return str(answer)
-
-
-@dataclass
-class Seat:
-    """Who is calling a tool: the team, and the agent's name."""
-
-    team: Team
-    name: str
-    reads: int = 0  # tool reads in this run
-
-
-# Tools ------------------------------------------------------------------------------------------
-
-
-def _show(ctx: RunContext[Seat], text: str) -> None:
-    ctx.deps.team.set_card(ctx.deps.name, "working", text)
-
-
-def _read(
-    ctx: RunContext[Seat], label: str, tool: str, *args: Any, **kwargs: Any
-) -> Any:
-    """Call a read-only simulator tool, show it on the agent's card and in the messages."""
-    if (limit := _over_limit(ctx, label)) is not None:
-        return limit
-    _show(ctx, label)
-    result = ctx.deps.team.world.call(tool, *args, **kwargs)
-    if isinstance(result, dict) and str(result.get("error", "")).startswith(
-        "Unknown component"
-    ):
-        result["hint"] = COMPONENTS_HINT
-    ctx.deps.team.post(ctx.deps.name, "systems", f"{label} → {summary(result)}", "tool")
-    return result
-
-
-def _over_limit(ctx: RunContext[Seat], label: str) -> dict[str, str] | None:
-    """An agent gets MAX_TOOL_CALLS reads. Then every read says: stop and answer."""
-    ctx.deps.reads += 1
-    if ctx.deps.reads <= MAX_TOOL_CALLS:
-        return None
-    result = {
-        "error": f"You have used your {MAX_TOOL_CALLS} tool calls. Do not call tools again: answer now with what you found."
-    }
-    ctx.deps.team.post(
-        ctx.deps.name,
-        "systems",
-        f"{label} → refused: {MAX_TOOL_CALLS} tool calls used",
-        "tool",
-    )
-    return result
-
-
-def summary(result: Any, limit: int = 160) -> str:
-    if isinstance(result, dict) and isinstance(result.get("error"), str):
-        return f"error: {result['error']}"
-    text = json.dumps(result, default=str)
-    return text if len(text) <= limit else text[:limit] + "…"
-
-
-Component = Literal[
-    "order-gateway", "matching-engine", "market-data", "settlement", "reference-db"
-]
-COMPONENTS_HINT = (
-    "Components: order-gateway, matching-engine, market-data, settlement, reference-db. "
-    "Sites are not components: what is planned or broken on a site is in the tickets and the logs."
-)
-
-
-def read_metrics(ctx: RunContext[Seat], component: Component) -> dict[str, Any]:
-    """Recent metrics of a component (latency_ms, error_rate)."""
-    return _read(ctx, f"read_metrics {component}", "read_metrics", component, 3)
-
-
-def read_logs(
-    ctx: RunContext[Seat], component: Component, contains: str | None = None
-) -> dict[str, Any]:
-    """Recent log lines of a component; contains filters, e.g. "WARN"."""
-    return _read(
-        ctx,
-        f"read_logs {component}" + (f" '{contains}'" if contains else ""),
-        "read_logs",
-        component=component,
-        contains=contains,
-        limit=15,
-    )
-
-
-def check_link(
-    ctx: RunContext[Seat], source: Component, target: Component
-) -> dict[str, Any]:
-    """State of the link between two components: up, degraded or down."""
-    return _read(ctx, f"check_link {source} → {target}", "check_link", source, target)
-
-
-def recent_changes(
-    ctx: RunContext[Seat], component: Component | None = None
-) -> dict[str, Any]:
-    """Recent deploys and configuration changes."""
-    return _read(
-        ctx, f"recent_changes {component or ''}".strip(), "recent_changes", component, 5
-    )
-
-
-def search_tickets(
-    ctx: RunContext[Seat], text: str | None = None, component: Component | None = None
-) -> dict[str, Any]:
-    """Search tickets: member incidents and planned work (maintenance windows)."""
-    return _read(
-        ctx,
-        f"search_tickets {text or ''} {component or ''}".strip(),
-        "search_tickets",
-        text=text,
-        component=component,
-    )
-
-
-def read_ticket(ctx: RunContext[Seat], key: str) -> dict[str, Any]:
-    """Read one ticket, e.g. MRX-4790."""
-    return _read(ctx, f"read_ticket {key}", "read_ticket", key)
-
-
-def rollback_change(
-    ctx: RunContext[Seat], change_id: str, reason: str
-) -> dict[str, Any]:
-    """Undo a configuration change. change_id is the exact id, e.g. CHG-4750 (recent_changes lists them).
-    Asks the on-call for approval first."""
-    team = ctx.deps.team
-    ref, comment = team.ask_approval(
-        ctx.deps.name, "rollback_change", change_id, reason
-    )
-    if ref is None:
-        return {"status": "rejected by the on-call", "comment": comment}
-    result = team.world.call(
-        "rollback_change",
-        change_id,
-        idempotency_key=f"s07:{change_id}",
-        confirmation_ref=ref,
-    )
-    team.post(
-        ctx.deps.name,
-        "systems",
-        f"rollback_change {change_id}: {result.get('outcome', result)}",
-        "action",
-    )
-    return result
-
-
-def failover_gateway(
-    ctx: RunContext[Seat], site: Literal["A", "B", "C"], reason: str
-) -> dict[str, Any]:
-    """Move order-gateway to another site. Asks the on-call for approval first."""
-    team = ctx.deps.team
-    ref, comment = team.ask_approval(
-        ctx.deps.name, "failover_gateway", f"site-{site}", reason
-    )
-    if ref is None:
-        return {"status": "rejected by the on-call", "comment": comment}
-    result = team.world.failover_gateway(site, ref, ctx.deps.name)
-    team.post(
-        ctx.deps.name,
-        "systems",
-        f"failover_gateway site-{site}: {result.get('outcome', result)}",
-        "action",
-    )
-    return result
-
-
-def gateway_state(ctx: RunContext[Seat]) -> dict[str, Any]:
-    """Where the gateway runs now, and its latest latency and error rate."""
-    if (limit := _over_limit(ctx, "gateway_state")) is not None:
-        return limit
-    _show(ctx, "gateway_state")
-    result = ctx.deps.team.world.gateway_now()
-    ctx.deps.team.post(
-        ctx.deps.name, "systems", f"gateway_state → {summary(result)}", "tool"
-    )
-    return result
-
-
-# The agents -------------------------------------------------------------------------------------
-
-BRIEF = " Be quick: a few tool calls (about 5), then answer with what you found, even if it is incomplete."
-SITES = (
-    "Sites: A (primary, where order-gateway runs), B (standby), C (disaster recovery, fully independent). "
-    "Each site has its own copy of reference-db: a gateway on site B uses reference-db on site B, and so on."
-)
-
-NETWORK = (
-    "You are the network specialist of the Meridian Exchange incident team. Investigate the question you get: "
-    "the link from order-gateway to reference-db, recent changes, the gateway's logs. Do not change anything. "
-    "Report the cause and the evidence. Quote ids exactly (CHG-..., MRX-...). "
-    + SITES
-    + BRIEF
-)
-DATABASE = (
-    "You are the database specialist of the Meridian Exchange incident team. Investigate the question you get: "
-    "reference-db's health and logs, and tickets about planned work on it. Do not change anything. "
-    "reference-db is one component: its sites are not separate components; planned work on a site is in the tickets. "
-    "Report the cause, the evidence and any constraint the others must respect (for example a maintenance window). "
-    "Quote ids exactly (CHG-..., MRX-...). " + SITES + BRIEF
-)
-REMEDIATION = (
-    "You are the remediation specialist of the Meridian Exchange incident team. Carry out the task you get with your tools. "
-    + SITES
-    + " Choose the fix in this order. 1) The findings name a recent change as the cause (for example a CHG-... change)? "
-    "Roll back that change with rollback_change: that is the fix, do not fail over. Never roll back a change that did not "
-    "cause the problem. 2) No change caused it and site A's network itself is failing? Fail over order-gateway: site B is "
-    "the standard move; use site C only if site B cannot be used. "
-    "Respect every constraint in your task. "
-    "Every action asks the on-call for approval: if they reject it, read their comment and change the plan. "
-    "Afterwards read the gateway's metrics and report."
-)
-REVIEWER = (
-    "You are the reviewer of the Meridian Exchange incident team. Do not trust what the others say: check the real state. "
-    "The incident is over only if order-gateway's latency is below 20 ms and its error rate below 1%, now. "
-    "If it is not over, say why, with what you saw (logs help)." + BRIEF
-)
-
-AGENTS: dict[str, tuple[str, type[BaseModel], tuple]] = {
-    "network": (
-        NETWORK,
-        NetworkFinding,
-        (read_metrics, read_logs, check_link, recent_changes),
-    ),
-    "database": (
-        DATABASE,
-        Finding,
-        (read_metrics, read_logs, search_tickets, read_ticket),
-    ),
-    "remediation": (
-        REMEDIATION,
-        RemediationReport,
-        (
-            read_metrics,
-            gateway_state,
-            recent_changes,
-            rollback_change,
-            failover_gateway,
-        ),
-    ),
-    "reviewer": (REVIEWER, Review, (gateway_state, read_metrics, read_logs)),
+ROLE_OUTPUT: dict[Role, type[BaseModel]] = {
+    "orchestrator": Outcome,
+    "network": NetworkFinding,
+    "database": Finding,
+    "remediation": RemediationReport,
+    "reviewer": Review,
 }
 
+# Building ----------------------------------------------------------------------------------------
 
-def build(name: str, team: Team) -> Agent[Seat, Any]:
-    instructions, output, tools = AGENTS[name]
-    return Agent(
-        team.model,
+
+def resolve_model(model: Any, role: Role) -> Any:
+    """The offline stub for the offline marker or pydantic's TestModel, else the model itself."""
+    if is_offline(model):
+        return offline_model(role)
+    return model
+
+
+def _component_of_alert(deps: IncidentDeps) -> str | None:
+    alert_id = deps.sim.incident_brief().get("alert_id")
+    for alert in deps.sim.alerts.alerts:
+        if alert.alert_id == alert_id:
+            return alert.component
+    return None
+
+
+def verify_recovery(
+    ctx: RunContext[Seat], report: RemediationReport
+) -> RemediationReport:
+    """Output validator: "resolved" needs healthy readings of the incident's component."""
+    if report.status != "resolved":
+        return report
+    component = _component_of_alert(ctx.deps.deps)
+    if component is None:
+        return report
+    metrics = ctx.deps.deps.tools.read_metrics(component, HEALTHY_READINGS)
+    if "error" in metrics:
+        raise ModelRetry(
+            f"Recovery cannot be confirmed: {metrics['error']}. Do not report resolved."
+        )
+    bad = [
+        reading
+        for reading in metrics["readings"]
+        if reading["latency_ms"] >= MAX_LATENCY_MS
+        or reading["error_rate"] >= MAX_ERROR_RATE
+    ]
+    if bad:
+        raise ModelRetry(
+            f"Recovery not confirmed on {component}: latency_ms={bad[-1]['latency_ms']}, "
+            f"error_rate={bad[-1]['error_rate']}. Read the metrics again after acting, "
+            "and report unresolved if they are still unhealthy."
+        )
+    return report
+
+
+def build_role_agent(role: Role, model: Any, team: TeamVersion) -> Agent[Seat, Any]:
+    version = team.roles[role]
+    agent: Agent[Seat, Any] = Agent(
+        resolve_model(model, role),
+        name=role,
         deps_type=Seat,
-        output_type=output,
-        instructions=instructions,
-        tools=tools,
+        output_type=ROLE_OUTPUT[role],
+        instructions=version.instructions,
+        tools=[TOOL_FUNCTIONS[name] for name in version.tools],
         retries=3,
     )
+    if role == "remediation" and version.verify_recovery:
+        agent.output_validator(verify_recovery)
+    return agent
 
 
-# The patterns -----------------------------------------------------------------------------------
+class TeamAgent(Agent[IncidentDeps, Outcome]):
+    """The orchestrator agent, carrying the team it belongs to."""
+
+    team: TeamVersion
+    specialists: dict[Role, Agent[Seat, Any]]
 
 
-async def runbook(team: Team) -> None:
-    """The demo's pipeline: the runbook for a latency alert. Network investigates, remediation fixes."""
-    team.sender = "pipeline"
-    finding = await team.ask("network", f"{team.brief} Find the cause of the latency.")
-    await team.ask(
+def team_state(agent: TeamAgent, deps: IncidentDeps) -> TeamState:
+    """The run's team state, created on first use and kept on the run's dependencies."""
+    if "team" not in deps.scratch:
+        sender = "orchestrator" if agent.team.topology == "orchestrator" else "pipeline"
+        deps.scratch["team"] = TeamState(
+            version=agent.team,
+            deps=deps,
+            agents=dict(agent.specialists),
+            sender=sender,
+        )
+    return deps.scratch["team"]
+
+
+def _ask_toolset(
+    agent_holder: list[TeamAgent], names: Sequence[str]
+) -> FunctionToolset[IncidentDeps]:
+    toolset: FunctionToolset[IncidentDeps] = FunctionToolset()
+
+    def add(role: Role, description: str) -> None:
+        async def ask(ctx: RunContext[IncidentDeps], request: str) -> dict[str, Any]:
+            state = team_state(agent_holder[0], ctx.deps)
+            state.bind_usage(ctx.usage, ctx.usage_limits)
+            result = await invoke_role(role, request, state=state)
+            return result.model_dump(exclude_none=True)
+
+        ask.__name__ = f"ask_{role}"
+        ask.__doc__ = description
+        if ask.__name__ in names:
+            toolset.add_function(ask, name=ask.__name__)
+
+    add(
+        "network",
+        "Ask the network specialist: links, recent changes, the affected component's logs. It changes nothing.",
+    )
+    add(
+        "database",
+        "Ask the database specialist: reference-db health, logs, planned work and maintenance windows. It changes nothing.",
+    )
+    add(
         "remediation",
-        f"{team.brief}\nThe network specialist found:\n{finding}\nMitigate the incident.",
+        "Give remediation a task: what to do, why, the affected component, and the constraints to respect. It acts under approval.",
+    )
+    add(
+        "reviewer",
+        "Ask the reviewer to check the real state and say whether the incident is over.",
+    )
+    return toolset
+
+
+def build_team_agent(model: Any, team: TeamVersion) -> TeamAgent:
+    specialists: dict[Role, Agent[Seat, Any]] = {
+        role: build_role_agent(role, model, team) for role in SPECIALISTS
+    }
+    holder: list[TeamAgent] = []
+    version = team.roles["orchestrator"]
+    agent = TeamAgent(
+        resolve_model(model, "orchestrator"),
+        name="orchestrator",
+        deps_type=IncidentDeps,
+        output_type=Outcome,
+        instructions=version.instructions,
+        toolsets=[_ask_toolset(holder, version.tools)],
+        retries=3,
+    )
+    agent.team = team
+    agent.specialists = specialists
+    holder.append(agent)
+    return agent
+
+
+# Invoking a role ---------------------------------------------------------------------------------
+
+
+def _render(answer: BaseModel) -> dict[str, Any]:
+    return answer.model_dump(mode="json")
+
+
+def _no_answer(
+    state: TeamState, role: Role, reason: str, requests: int, refs: list[str]
+) -> RoleResult:
+    text = f"No answer: {role} stopped without finishing ({reason})."
+    handoff = state.record_handoff(
+        role, state.sender, "no_answer", {"reason": text}, refs
+    )
+    return RoleResult(
+        role=role,
+        handoff_id=handoff.id,
+        status="no_answer",
+        reason=text,
+        evidence_refs=refs,
+        requests=requests,
     )
 
 
-async def students_pipeline(team: Team) -> None:
-    team.sender = "pipeline"
-    await load_starter("pipeline").run_pipeline(team)
+def _request_limit(state: TeamState, role: Role) -> UsageLimits:
+    """The role's own remaining requests, inside the run's shared budget."""
+    assert state.usage is not None
+    remaining = state.version.roles[role].max_requests - state.requests[role]
+    limit = state.usage.requests + remaining
+    if state.request_limit is not None:
+        limit = min(limit, state.request_limit)
+    return UsageLimits(request_limit=limit)
 
 
-async def students_orchestrator(team: Team) -> None:
-    orchestrator = load_starter("orchestrator").build_orchestrator(team.model)
-    team.sender = "orchestrator"
-    team.set_card("orchestrator", "working", "Reading the incident…")
-    result = await orchestrator.run(
-        team.brief, deps=team, usage_limits=UsageLimits(request_limit=40)
+async def invoke_role(role: Role, request: str, *, state: TeamState) -> RoleResult:
+    """Run one specialist on one request and return its answer, or an explicit no-answer."""
+    if state.usage is None:
+        state.usage = RunUsage()
+    span = trace.get_current_span()
+    asked = state.record_handoff(state.sender, role, "request", {"text": request})
+    span.set_attributes(
+        {"meridian.role": role, "meridian.request_handoff_id": asked.id}
     )
-    with team._lock:
-        usage = result.usage
-        team.requests += usage.requests
-        team.tokens += (usage.input_tokens or 0) + (usage.output_tokens or 0)
-    team.outcome = result.output
-    if isinstance(result.output, Outcome):
-        team.reported = result.output.status
-    team.set_card("orchestrator", "done", render(result.output))
+    if state.requests[role] >= state.version.roles[role].max_requests:
+        return _no_answer(state, role, "its request limit is used", 0, [])
+
+    seat = Seat(state.deps, role, state)
+    output: BaseModel | None = None
+    failure = ""
+    with capture_run_messages() as messages:
+        try:
+            run = await state.agents[role].run(
+                request,
+                deps=seat,
+                usage=state.usage,
+                usage_limits=_request_limit(state, role),
+            )
+            output = run.output
+        except AgentRunError as error:
+            failure = str(error)
+    requests = sum(1 for message in messages if isinstance(message, ModelResponse))
+    state.requests[role] += requests
+    state.deps.extra_messages.extend(messages)
+
+    if output is None:
+        result = _no_answer(state, role, failure, requests, seat.refs)
+    else:
+        handoff = state.record_handoff(
+            role, state.sender, "result", _render(output), seat.refs
+        )
+        result = RoleResult(
+            role=role,
+            handoff_id=handoff.id,
+            status="answered",
+            answer=_render(output),
+            evidence_refs=seat.refs,
+            requests=requests,
+        )
+    span.set_attributes(
+        {
+            "meridian.handoff_id": result.handoff_id,
+            "meridian.handoff_status": result.status,
+            "meridian.tick": state.deps.sim.state.tick,
+        }
+    )
+    if role == "reviewer":
+        _record_review(state, result, span)
+    return result
+
+
+def _record_review(state: TeamState, result: RoleResult, span: trace.Span) -> None:
+    """Keep the reviewer's verdict next to the real state at the same tick."""
+    recovered = state_recovered(state.deps)
+    status = str((result.answer or {}).get("status", "no_answer"))
+    tick = state.deps.sim.state.tick
+    state.reviews.append(
+        ReviewFact(tick=tick, state_recovered=recovered, reviewer_status=status)
+    )
+    span.set_attribute("meridian.reviewer_status", status)
+    if recovered is not None:
+        span.set_attribute("meridian.state_recovered", recovered)
+
+
+# The pipeline ------------------------------------------------------------------------------------
+
+
+def _text(result: RoleResult) -> str:
+    if result.status == "no_answer":
+        return result.reason
+    return "; ".join(f"{key}: {value}" for key, value in (result.answer or {}).items())
+
+
+async def _step(role: Role, request: str, state: TeamState) -> RoleResult:
+    with TRACER.start_as_current_span(
+        "meridian.handoff", attributes={"meridian.role": role}
+    ):
+        return await invoke_role(role, request, state=state)
+
+
+async def run_pipeline(
+    agent: TeamAgent, prompt: str, deps: IncidentDeps, limits: UsageLimits
+) -> Outcome:
+    """Network and database investigate, remediation acts, the reviewer checks; one correction at most."""
+    state = team_state(agent, deps)
+    state.usage = RunUsage()
+    state.request_limit = limits.request_limit
+    network = await _step("network", f"{prompt}\nFind the cause.", state)
+    database = await _step(
+        "database", f"{prompt}\nFind the cause and any constraint.", state
+    )
+    findings = f"Network: {_text(network)}\nDatabase: {_text(database)}"
+    task = f"{prompt}\nFindings:\n{findings}\nMitigate the incident, respecting every constraint."
+    remediation = await _step("remediation", task, state)
+    review = await _step(
+        "reviewer", f"{prompt}\nIs the incident over? Check the real state.", state
+    )
+    if (review.answer or {}).get("status") != "resolved":
+        correction = f"{task}\nThe reviewer says the incident is not over: {_text(review)} Fix it if you safely can."
+        remediation = await _step("remediation", correction, state)
+        review = await _step(
+            "reviewer",
+            f"{prompt}\nIs the incident over now? Check the real state.",
+            state,
+        )
+    recovered = (review.answer or {}).get("status") == "resolved"
+    cause = (network.answer or {}).get("cause") or "no answer from network"
+    return Outcome(
+        status="resolved" if recovered else "unresolved",
+        root_cause=str(cause),
+        summary=f"Remediation: {_text(remediation)} Review: {_text(review)}",
+    )
+
+
+def run_sync(
+    agent: TeamAgent,
+    prompt: str,
+    deps: IncidentDeps,
+    limits: UsageLimits,
+    toolsets: Any,
+) -> Outcome:
+    if agent.team.topology == "pipeline":
+        return asyncio.run(run_pipeline(agent, prompt, deps, limits))
+    result = agent.run_sync(prompt, deps=deps, usage_limits=limits, toolsets=toolsets)
+    return result.output
