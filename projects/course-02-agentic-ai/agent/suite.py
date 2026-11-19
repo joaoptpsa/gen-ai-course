@@ -1,207 +1,217 @@
-"""The accumulated case set, run several times per version.
+"""Run the full team over a case set and prepare what the loop needs around it.
 
-Cases come from Sessions 1 and 2, plus any case the students add to starter/cases/.
-Each run is checked twice: by the case's checks (meridian.evaluate) and by the
-trajectory checks of starter/trajectory.py.
+A run goes through the workbench's `compare` and lands in a saved result set, so every number in
+the lineage resolves through `results show`. A candidate is staged as a throwaway copy of the
+harness folder, with the candidate's version file pinned for its role.
 """
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+import shutil
+import tempfile
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-import agents
+import yaml
+from agent.versions import ROLES, Role, RoleVersion, TeamVersion, load_team
 
-from meridian.agent_runtime import IncidentRun, run_incident
+from app import commands
+from app.core.model_budget import BudgetExhaustedError
+from app.core.results import ResultSet, load_result_set
+from app.core.runner import RunRecord
+from app.core.team_trace import TrustedFacts
+from app.paths import CHECKS_DIR, HARNESSES_DIR, RESULTS_DIR
 
-COURSE = agents.HERE.parents[1]
-CASE_DIRS = (
-    COURSE / "01-agent-harness" / "cases",
-    COURSE / "02-context-tools-skills" / "cases",
-    agents.STARTER / "cases",
-)
-
-
-def cases() -> dict[str, Path]:
-    found: dict[str, Path] = {}
-    for directory in CASE_DIRS:
-        for path in sorted(directory.glob("*.yaml")):
-            found[path.stem] = path
-    return found
+HARNESS_NAME = "project/team"
+Arm = Literal["baseline", "candidate"]
+Side = Literal["train", "valid", "test"]
 
 
-def load_starter(name: str):
-    """A students' file from starter/, loaded fresh so edits apply without restarting the app."""
-    spec = importlib.util.spec_from_file_location(
-        f"s06_{name}", agents.STARTER / f"{name}.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[f"s06_{name}"] = module
-    spec.loader.exec_module(module)
-    return module
+@dataclass(frozen=True)
+class CompareRequest:
+    """One team run over a case set: which team (a harness folder), which cases, how many times."""
+
+    label: str
+    arm: Arm
+    split: Side
+    case_ids: list[str]
+    reps: int
+    harnesses_dir: Path
 
 
-def trajectory_checks() -> list[Callable[[IncidentRun], tuple[bool, str]]]:
-    """The functions listed in starter/trajectory.py (CHECKS). Unwritten ones are skipped."""
-    return list(getattr(load_starter("trajectory"), "CHECKS", []))
+Compare = Callable[[CompareRequest], ResultSet]
 
 
-def describe(run: IncidentRun) -> tuple[str, str]:
-    """What the critic sees about a run: describe_run() in starter/improver.py, or only the agent's own words."""
-    import pieces
+def workbench_compare(
+    model: Any, *, results_dir: Path = RESULTS_DIR, max_workers: int = 4
+) -> Compare:
+    """The real compare: the workbench's matrix runner and saved result sets."""
 
-    return pieces.describe(run)
-
-
-@dataclass
-class RunResult:
-    version: str
-    case: str
-    passed: bool
-    failed: list[str]
-    tokens: int
-    requests: int
-    status: str
-    summary: str
-    error: str | None = None
-    trajectory: dict[str, str] = field(default_factory=dict)
-    actions: list[str] = field(default_factory=list)
-    description: str = ""  # what the critic sees
-    description_origin: str = "default"
-
-    @property
-    def row(self) -> dict[str, Any]:
-        return {
-            "Version": self.version,
-            "Case": self.case,
-            "Pass": self.passed,
-            "Status": self.status,
-            "Failed checks": "; ".join(self.failed) or "-",
-            "Input tokens": self.tokens,
-            "Requests": self.requests,
-        }
-
-
-def _check_trajectory(
-    run: IncidentRun, checks
-) -> tuple[bool, dict[str, str], list[str]]:
-    passed, notes, failed = True, {}, []
-    for check in checks:
-        name = check.__name__
-        try:
-            ok, detail = check(run)
-        except NotImplementedError:
-            notes[name] = "not written yet"
-            continue
-        notes[name] = ("ok: " if ok else "FAIL: ") + detail
-        if not ok:
-            passed = False
-            failed.append(name)
-    return passed, notes, failed
-
-
-def run_one(version: agents.Version, case: str, path: Path, model: Any) -> RunResult:
-    run = run_incident(
-        agents.harness(version), path, model=model, max_requests=25, use_memory=False
-    )
-    failed = (
-        []
-        if run.evaluation is None
-        else [check.name for check in run.evaluation.checks if not check.passed]
-    )
-    report = run.report.model_dump() if run.report is not None else {}
-    ok_trajectory, notes, failed_trajectory = _check_trajectory(
-        run, trajectory_checks()
-    )
-    actions = [
-        f"{record.action} {record.target} -> {record.outcome}"
-        for record in run.sim.executor.audit
-    ]
-    text, origin = describe(run)
-    return RunResult(
-        version=version.name,
-        case=case,
-        passed=run.error is None and not failed and ok_trajectory,
-        failed=failed
-        + [f"trajectory: {name}" for name in failed_trajectory]
-        + ([run.error] if run.error else []),
-        tokens=run.extra.get("input_tokens", 0),
-        requests=run.extra.get("requests", 0),
-        status=report.get("status", "no report"),
-        summary=report.get("summary", ""),
-        error=run.error,
-        trajectory=notes,
-        actions=actions,
-        description=text,
-        description_origin=origin,
-    )
-
-
-def run_many(
-    jobs: list[tuple[agents.Version, str, Path]],
-    model: Any,
-    workers: int = 6,
-    on_done: Callable[[int, int], None] | None = None,
-) -> list[RunResult]:
-    """Run the jobs in parallel (each on its own fresh simulator)."""
-    results: list[RunResult] = []
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [
-            pool.submit(run_one, version, case, path, model)
-            for version, case, path in jobs
-        ]
-        for done, future in enumerate(as_completed(futures), start=1):
-            try:
-                results.append(future.result())
-            except Exception as error:  # noqa: BLE001 - a failed request must not lose the other runs.
-                version, case, _ = jobs[futures.index(future)]
-                results.append(
-                    RunResult(
-                        version.name,
-                        case,
-                        False,
-                        [f"run failed: {error}"],
-                        0,
-                        0,
-                        "error",
-                        "",
-                        str(error),
-                        description=f"The run failed: {error}",
-                    )
-                )
-            if on_done:
-                on_done(done, len(jobs))
-    return results
-
-
-def pass_rate(results: list[RunResult]) -> float:
-    return sum(r.passed for r in results) / len(results) if results else 0.0
-
-
-def pass_table(results: list[RunResult]) -> list[dict[str, Any]]:
-    """One row per case, one column per version: 'passes/runs'."""
-    names = list(dict.fromkeys(result.version for result in results))
-    rows = []
-    for case in sorted({result.case for result in results}):
-        row: dict[str, Any] = {"Case": case}
-        for name in names:
-            runs = [
-                result
-                for result in results
-                if result.case == case and result.version == name
-            ]
-            row[name] = f"{sum(r.passed for r in runs)}/{len(runs)}" if runs else "-"
-        rows.append(row)
-    total: dict[str, Any] = {"Case": "TOTAL"}
-    for name in names:
-        runs = [result for result in results if result.version == name]
-        tokens = sum(r.tokens for r in runs) // max(1, len(runs))
-        total[name] = (
-            f"{sum(r.passed for r in runs)}/{len(runs)} · {tokens:,} tokens/run"
+    def compare(request: CompareRequest) -> ResultSet:
+        outcome = commands.compare(
+            [HARNESS_NAME],
+            request.case_ids,
+            reps=request.reps,
+            model=model,
+            max_workers=max_workers,
+            save_label=request.label,
+            harnesses_dir=request.harnesses_dir,
+            results_dir=results_dir,
         )
-    return rows + [total]
+        saved = load_result_set(outcome["result_set"], results_dir=results_dir)
+        raise_if_budget_exhausted(saved.runs)
+        return saved
+
+    return compare
+
+
+def raise_if_budget_exhausted(records: Sequence[RunRecord]) -> None:
+    """The matrix turns a raised exception into an errored record; the cap must still stop the loop."""
+    for record in records:
+        if record.error and "BudgetExhaustedError" in record.error:
+            raise BudgetExhaustedError(record.error)
+
+
+# Staging ---------------------------------------------------------------------------------------
+
+
+def _write_team_file(destination: Path, source: Path, pins: Mapping[Role, str]) -> None:
+    team = yaml.safe_load(source.read_text(encoding="utf-8"))
+    team["versions"] = {**team["versions"], **pins}
+    destination.write_text(yaml.safe_dump(team, sort_keys=False), encoding="utf-8")
+
+
+@contextmanager
+def staged_team(
+    harnesses_dir: Path = HARNESSES_DIR,
+    *,
+    team_file: Path | None = None,
+    pins: Mapping[Role, str] | None = None,
+    override: RoleVersion | None = None,
+) -> Iterator[Path]:
+    """A temporary harness folder that runs one team, leaving the real folder untouched.
+
+    `team_file` names another team.yaml (its versions sit beside it); `pins` pick other versions
+    of the pinned roles; `override` adds a candidate's version file and pins it for its role.
+    """
+    source_team = team_file or harnesses_dir / "team.yaml"
+    source_versions = source_team.parent / "versions"
+    chosen: dict[Role, str] = dict(pins or {})
+    if override is not None:
+        chosen[override.role] = override.version
+    with tempfile.TemporaryDirectory(prefix="team-stage-") as directory:
+        staged = Path(directory) / "harnesses"
+        (staged / "versions").mkdir(parents=True)
+        shutil.copy2(harnesses_dir / "team.py", staged / "team.py")
+        _write_team_file(staged / "team.yaml", source_team, chosen)
+        for role in ROLES:
+            shutil.copytree(source_versions / role, staged / "versions" / role)
+        if override is not None:
+            write_version_file(staged / "versions", override)
+        yield staged
+
+
+class _VersionDumper(yaml.SafeDumper):
+    """Multi-line text as a literal block, so instructions stay readable in the file."""
+
+
+def _represent_text(dumper: yaml.SafeDumper, text: str) -> yaml.ScalarNode:
+    style = "|" if "\n" in text else None
+    return dumper.represent_scalar("tag:yaml.org,2002:str", text, style=style)
+
+
+_VersionDumper.add_representer(str, _represent_text)
+
+
+def version_text(version: RoleVersion) -> str:
+    content = version.model_dump(
+        include={
+            "instructions",
+            "tools",
+            "max_requests",
+            "max_tool_calls",
+            "verify_recovery",
+        }
+    )
+    return yaml.dump(content, Dumper=_VersionDumper, sort_keys=False, width=100)
+
+
+def write_version_file(versions_dir: Path, version: RoleVersion) -> Path:
+    """Write `versions/<role>/<version>.yaml` atomically; an existing file is never replaced."""
+    directory = versions_dir / version.role
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"{version.version}.yaml"
+    with tempfile.NamedTemporaryFile(
+        "w",
+        dir=directory,
+        prefix=f".{version.version}-",
+        suffix=".tmp",
+        delete=False,
+        encoding="utf-8",
+    ) as partial:
+        partial.write(version_text(version))
+        partial_path = Path(partial.name)
+    try:
+        # A hard link fails when the name is taken, so two loops cannot both claim one version.
+        target.hardlink_to(partial_path)
+    finally:
+        partial_path.unlink()
+    return target
+
+
+def next_version(versions_dir: Path, role: Role) -> str:
+    numbers = [
+        int(path.stem.removeprefix("v"))
+        for path in (versions_dir / role).glob("v*.yaml")
+        if path.stem.removeprefix("v").isdigit()
+    ]
+    return f"v{max(numbers, default=0) + 1}"
+
+
+def team_pins(team: TeamVersion) -> dict[str, str]:
+    return {role: version.version for role, version in team.roles.items()}
+
+
+def load_staged_fingerprint(staged: Path) -> str:
+    return load_team(staged / "team.yaml").fingerprint
+
+
+# Trusted facts ---------------------------------------------------------------------------------
+
+
+def _components(solution: Mapping[str, Any], scenario: Mapping[str, Any]) -> list[str]:
+    names: list[str] = []
+    recovery = solution.get("recovery") or {}
+    for condition in recovery.get("conditions", []):
+        if "component" in condition:
+            names.append(str(condition["component"]))
+        if "link" in condition:
+            names.extend(str(condition["link"]).split("->"))
+    for fault in scenario.get("faults", []):
+        names.extend(str(fault[key]) for key in ("component", "source") if key in fault)
+    return list(dict.fromkeys(name.strip() for name in names))
+
+
+def _recovered(record: RunRecord, solution: Mapping[str, Any]) -> bool | None:
+    """None when the case states no recovery expectation, so the reviewer is not judged on it."""
+    for check in record.checks:
+        if str(check["name"]).startswith("recovery held"):
+            return bool(check["passed"])
+    expected = (solution.get("report") or {}).get("claims_recovery")
+    if expected is None:
+        return None
+    return bool(expected)
+
+
+def trusted_facts(record: RunRecord, *, checks_dir: Path = CHECKS_DIR) -> TrustedFacts:
+    """Simulator and solution facts for one run, read from the case files, never from the agents."""
+    solution_path = checks_dir / f"{record.case_id}.yaml"
+    solution = yaml.safe_load(solution_path.read_text(encoding="utf-8")) or {}
+    scenario = yaml.safe_load(Path(record.case_path).read_text(encoding="utf-8")) or {}
+    return TrustedFacts(
+        affected_components=_components(solution, scenario),
+        recovered=_recovered(record, solution),
+    )

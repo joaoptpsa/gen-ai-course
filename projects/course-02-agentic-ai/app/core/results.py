@@ -166,6 +166,19 @@ def load_result_set(set_id: str, *, results_dir: Path = RESULTS_DIR) -> ResultSe
     return ResultSet.from_dict(_read_json(path))
 
 
+def find_run(result_set: ResultSet, run_id: str) -> RunRecord:
+    """The run with this id, or the only run whose id starts with it."""
+    matches = [run for run in result_set.runs if run.run_id.startswith(run_id)]
+    exact = [run for run in matches if run.run_id == run_id]
+    if exact:
+        return exact[0]
+    if len(matches) == 1:
+        return matches[0]
+    known = ", ".join(run.run_id for run in result_set.runs)
+    reason = "ambiguous" if matches else "unknown"
+    raise LookupError(f"{reason} run {run_id!r} in {result_set.set_id}; runs: {known}")
+
+
 def latest_runs_by_case(*, results_dir: Path = RESULTS_DIR) -> list[RunRecord]:
     """For every case, the runs of the newest saved set that ran it."""
     seen: set[str] = set()

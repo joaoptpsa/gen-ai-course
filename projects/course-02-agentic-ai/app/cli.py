@@ -226,6 +226,80 @@ def _add_results(subparsers: Any, common: argparse.ArgumentParser) -> None:
     diff.add_argument("baseline")
     diff.add_argument("current")
     diff.add_argument("--by", choices=("harness_case", "case"), default="harness_case")
+    review = _command(
+        sub,
+        "review",
+        "project one saved run per agent, check each role and blame one agent",
+        _results_review,
+        _render_review,
+        common,
+    )
+    review.add_argument("set_id")
+    review.add_argument("run_id", help="run id (a unique prefix is enough)")
+    review.add_argument("--critic-model", default="offline", help="default: offline")
+    _add_live_options(review)
+
+
+def _add_live_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--cap-usd",
+        default="5.00",
+        help="dollars of model spend allowed (default 5.00)",
+    )
+    parser.add_argument(
+        "--approve-live",
+        action="store_true",
+        help="approve spending on live models (offline needs no approval)",
+    )
+
+
+def _add_improve(subparsers: Any, common: argparse.ArgumentParser) -> None:
+    improve = subparsers.add_parser(
+        "improve",
+        help="improve one agent of the team, one version at a time",
+        parents=[common],
+    )
+    sub = improve.add_subparsers(dest="improve_command", required=True)
+    run = _command(
+        sub,
+        "run",
+        "one candidate attempt for one agent: baseline, critic, proposer, decision",
+        _improve_run,
+        _render_improve_run,
+        common,
+    )
+    run.add_argument(
+        "--role",
+        required=True,
+        choices=("orchestrator", "network", "database", "remediation", "reviewer"),
+        help="agent to improve (the reviewer is refused)",
+    )
+    run.add_argument(
+        "--model", help='team model ("offline" for the stub; default: runtime default)'
+    )
+    run.add_argument("--reps", type=int, default=3, help="runs per case and arm")
+    run.add_argument(
+        "--critic-model",
+        help="default: offline for an offline team, else the Sonnet model",
+    )
+    run.add_argument("--proposer-model", help="default: as the critic")
+    run.add_argument("--workers", type=int, default=4, help="parallel runs")
+    _add_live_options(run)
+    test = _command(
+        sub,
+        "test",
+        "run the held-out test split for one team; no critic or proposer",
+        _improve_test,
+        _render_improve_test,
+        common,
+    )
+    test.add_argument(
+        "--version", required=True, help="a team fingerprint or the path of a team.yaml"
+    )
+    test.add_argument("--model", help='team model ("offline" for the stub)')
+    test.add_argument("--reps", type=int, default=3, help="runs per case")
+    test.add_argument("--workers", type=int, default=4, help="parallel runs")
+    _add_live_options(test)
 
 
 def _add_requirements(subparsers: Any, common: argparse.ArgumentParser) -> None:
@@ -306,6 +380,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_explore(subparsers, common)
     _add_runs(subparsers, common)
     _add_results(subparsers, common)
+    _add_improve(subparsers, common)
     _add_requirements(subparsers, common)
     _add_gui(subparsers, common)
     return parser
@@ -407,6 +482,40 @@ def _results_show(args: argparse.Namespace) -> Any:
 
 def _results_diff(args: argparse.Namespace) -> Any:
     return commands.results_diff(args.baseline, args.current, by=args.by)
+
+
+def _results_review(args: argparse.Namespace) -> Any:
+    return commands.results_review(
+        args.set_id,
+        args.run_id,
+        critic_model=args.critic_model,
+        cap_usd=args.cap_usd,
+        approve_live=args.approve_live,
+    )
+
+
+def _improve_run(args: argparse.Namespace) -> Any:
+    return commands.improve_run(
+        args.role,
+        model=args.model,
+        reps=args.reps,
+        cap_usd=args.cap_usd,
+        critic_model=args.critic_model,
+        proposer_model=args.proposer_model,
+        max_workers=args.workers,
+        approve_live=args.approve_live,
+    )
+
+
+def _improve_test(args: argparse.Namespace) -> Any:
+    return commands.improve_test(
+        args.version,
+        model=args.model,
+        reps=args.reps,
+        cap_usd=args.cap_usd,
+        max_workers=args.workers,
+        approve_live=args.approve_live,
+    )
 
 
 def _requirements_status(args: argparse.Namespace) -> Any:
@@ -632,6 +741,61 @@ def _render_results_show(result: dict[str, Any]) -> None:
     print(f"commit={result['commit']}{dirty}  models={','.join(result['models'])}")
     print()
     print(_summary_table(result["summary"]))
+
+
+def _render_review(result: dict[str, Any]) -> None:
+    print(result["view"])
+    print("\nrole checks:")
+    for check in result["role_checks"]:
+        print(
+            f"  {check['role']} {check['check']}: {check['passed']} ({check['detail']})"
+        )
+    blame = result["blame"]
+    if blame is None:
+        print(f"\nno usable blame: {result['blame_error']}")
+        return
+    print(f"\nblame: {blame['role']} at span {blame['span_id']}")
+    print(f"  problem: {blame['problem']}")
+    print(f"  fix: {blame['fix_hint']}")
+
+
+def _render_improve_run(result: dict[str, Any]) -> None:
+    attempt = result["attempt"]
+    print(
+        f"{attempt['role']}: attempt {attempt['invocation_id']} {attempt['status']}, "
+        f"parent {attempt['parent_version']}, candidate {attempt['candidate_version'] or '-'}"
+    )
+    if attempt["change"]:
+        edit = attempt["change"]["edit"]
+        print(f"change: {edit['field']} = {edit['value']!r}")
+        print(f"why: {attempt['change']['rationale']}")
+    if attempt["detail"]:
+        print(f"detail: {attempt['detail']}")
+    decision = attempt["decision"]
+    if decision:
+        print(f"decision: {'ADOPT' if decision['adopt'] else 'REJECT'}")
+        print(
+            f"  training {_percent(decision['train_baseline_rate'])} to "
+            f"{_percent(decision['train_candidate_rate'])}"
+        )
+        for reason in decision["reasons"]:
+            print(f"  - {reason}")
+    print("result sets: " + ", ".join(f"{k}={v}" for k, v in attempt["sets"].items()))
+    print(
+        f"teams: baseline {attempt['baseline_team']}, candidate {attempt['candidate_team'] or '-'}; "
+        f"splits {attempt['splits_fingerprint'][:12]}; spent ${attempt['spent_usd']}"
+    )
+    print(f"lineage: {result['lineage_file']}")
+    if attempt["adopted_file"]:
+        print(f"kept: {attempt['adopted_file']}")
+        print(result["pin"])
+
+
+def _render_improve_test(result: dict[str, Any]) -> None:
+    print(
+        f"team {result['team']}: test {result['passed']}/{result['runs']} "
+        f"({_percent(result['pass_rate'])}); result set {result['result_set']}"
+    )
 
 
 def _render_diff(result: list[dict[str, Any]]) -> None:

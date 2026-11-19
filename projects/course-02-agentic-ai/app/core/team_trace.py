@@ -147,7 +147,7 @@ class TrustedFacts(BaseModel):
     """What the simulator and the case's solution say, never what an agent said."""
 
     affected_components: list[str] = Field(default_factory=list)
-    recovered: bool
+    recovered: bool | None
     action_tools: list[str] = Field(default_factory=lambda: list(ACTION_TOOLS))
 
 
@@ -429,6 +429,10 @@ def _remediation_after_finding(trace: TeamTrace, facts: TrustedFacts) -> RoleVer
 
 def _reviewer_matches_state(trace: TeamTrace, facts: TrustedFacts) -> RoleVerdict:
     role, check = "reviewer", "verdict_matches_state"
+    if facts.recovered is None:
+        return RoleVerdict(
+            role=role, check=check, passed=None, detail="case states no recovery"
+        )
     summary = trace.roles.get(role)
     if summary is None:
         return RoleVerdict(

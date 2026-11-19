@@ -1,43 +1,146 @@
-"""Exercise 2 — Decide whether to adopt a new version.
+"""Whether a candidate team replaces the baseline.
 
-The lab gives you, for each case, how many runs passed with the current version (baseline) and with the
-proposed one (candidate). Write decide(): it returns adopt=True, adopt=False, or adopt=None when the
-evidence is not enough to decide. Always give the reasons.
-
-Your rule must handle at least:
-- too few runs: one run per case shows luck, not reliability;
-- a regression: a case that the baseline passes reliably and the candidate now fails sometimes;
-- a gain: cases the candidate passes more often, or a clearly lower cost with no regression.
-
-The lab shows your decision under the comparison table. Compare B with A, then your C with A.
-
-Hints:
-- Compare pass rates (passes / runs), not raw counts: the versions may have different numbers of runs.
-- Decide what "reliably" means for you and write it as a constant.
+The rule runs in trusted code on saved run records. Only the full-team workbench verdict counts:
+a run passes when it completed and the Meridian evaluator passed.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections import defaultdict
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+
+from agent.models import Decision
+
+from app.core.runner import RunRecord
 
 
-@dataclass
+@dataclass(frozen=True)
+class ArmRuns:
+    passes: int
+    runs: int
+    # Runs that errored or were never evaluated: they prove nothing either way.
+    incomplete: int
+
+
+@dataclass(frozen=True)
 class CaseComparison:
-    case: str
-    baseline_passes: int
-    baseline_runs: int
-    candidate_passes: int
-    candidate_runs: int
+    case_id: str
+    expected_runs: int
+    baseline: ArmRuns
+    candidate: ArmRuns
 
 
-@dataclass
-class Decision:
-    adopt: bool | None
-    reasons: list[str] = field(default_factory=list)
+def _arm(records: Sequence[RunRecord]) -> ArmRuns:
+    passes = sum(1 for record in records if record.outcome == "passed")
+    incomplete = sum(
+        1 for record in records if record.outcome in ("errored", "not_evaluated")
+    )
+    return ArmRuns(passes=passes, runs=len(records), incomplete=incomplete)
+
+
+def compare_cases(
+    case_ids: Iterable[str],
+    reps: int,
+    baseline: Iterable[RunRecord],
+    candidate: Iterable[RunRecord],
+) -> list[CaseComparison]:
+    """One comparison per case; a case with no runs in an arm shows up as missing runs."""
+    by_arm: dict[str, dict[str, list[RunRecord]]] = {
+        "baseline": defaultdict(list),
+        "candidate": defaultdict(list),
+    }
+    for record in baseline:
+        by_arm["baseline"][record.case_id].append(record)
+    for record in candidate:
+        by_arm["candidate"][record.case_id].append(record)
+    return [
+        CaseComparison(
+            case_id=case_id,
+            expected_runs=reps,
+            baseline=_arm(by_arm["baseline"][case_id]),
+            candidate=_arm(by_arm["candidate"][case_id]),
+        )
+        for case_id in sorted(set(case_ids))
+    ]
+
+
+def _rate(arms: Iterable[ArmRuns]) -> float | None:
+    chosen = list(arms)
+    runs = sum(arm.runs for arm in chosen)
+    if runs == 0:
+        return None
+    return sum(arm.passes for arm in chosen) / runs
+
+
+def _blockers(comparisons: Sequence[CaseComparison]) -> list[str]:
+    blockers: list[str] = []
+    for comparison in comparisons:
+        for name, arm in (
+            ("baseline", comparison.baseline),
+            ("candidate", comparison.candidate),
+        ):
+            if arm.runs != comparison.expected_runs:
+                blockers.append(
+                    f"{comparison.case_id}: {name} has {arm.runs} of "
+                    f"{comparison.expected_runs} runs"
+                )
+            if arm.incomplete:
+                blockers.append(
+                    f"{comparison.case_id}: {name} has {arm.incomplete} errored or "
+                    "unevaluated runs"
+                )
+    return blockers
 
 
 def decide(
-    cases: list[CaseComparison], baseline_tokens: float, candidate_tokens: float
+    train: Sequence[CaseComparison], valid: Sequence[CaseComparison]
 ) -> Decision:
-    """baseline_tokens and candidate_tokens: average input tokens per run."""
-    raise NotImplementedError
+    """Adopt only when the training pass rate rises and no validation case passes less often.
+
+    Missing, errored or unevaluated runs in either arm block adoption.
+    """
+    if not train or not valid:
+        return Decision(adopt=False, reasons=["train and valid both need cases"])
+    blockers = _blockers([*train, *valid])
+    train_baseline = _rate(case.baseline for case in train)
+    train_candidate = _rate(case.candidate for case in train)
+    regressed = [
+        case.case_id for case in valid if case.candidate.passes < case.baseline.passes
+    ]
+    if blockers:
+        return Decision(
+            adopt=False,
+            reasons=[f"incomplete evidence: {blocker}" for blocker in blockers],
+            train_baseline_rate=train_baseline,
+            train_candidate_rate=train_candidate,
+            regressed_cases=regressed,
+        )
+    reasons: list[str] = []
+    if train_baseline is None or train_candidate is None:
+        reasons.append("no training runs")
+    elif train_candidate <= train_baseline:
+        reasons.append(
+            f"training pass rate did not rise ({train_baseline:.0%} to {train_candidate:.0%})"
+        )
+    if regressed:
+        reasons.append(f"validation regressed on {', '.join(regressed)}")
+    if reasons:
+        return Decision(
+            adopt=False,
+            reasons=reasons,
+            train_baseline_rate=train_baseline,
+            train_candidate_rate=train_candidate,
+            regressed_cases=regressed,
+        )
+    return Decision(
+        adopt=True,
+        reasons=[
+            (
+                f"training pass rate rose {train_baseline:.0%} to {train_candidate:.0%}, "
+                "no validation case regressed"
+            )
+        ],
+        train_baseline_rate=train_baseline,
+        train_candidate_rate=train_candidate,
+    )

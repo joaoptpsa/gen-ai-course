@@ -13,7 +13,16 @@ from typing import Any, Literal
 
 import yaml
 
-from app.core import authoring, catalog, explorer, requirements, results, runner
+from app.core import (
+    authoring,
+    case_splits,
+    catalog,
+    explorer,
+    requirements,
+    results,
+    runner,
+)
+from app.core.model_budget import DEFAULT_CAP_USD, ModelBudget
 from app.paths import (
     CASES_DIR,
     CHECKS_DIR,
@@ -291,6 +300,136 @@ def results_diff(
     before = results.load_result_set(baseline, results_dir=results_dir).runs
     after = results.load_result_set(current, results_dir=results_dir).runs
     return results.diff_runs(before, after, by=by)
+
+
+# Version loop ------------------------------------------------------------------------
+
+OFFLINE_MODEL = "offline"
+LIVE_AGENT_MODEL = "anthropic:claude-sonnet-5-5"
+
+
+def _approve_live(
+    names: dict[str, str], runs: int, cap_usd: Any, approved: bool
+) -> None:
+    live = {role: name for role, name in names.items() if name != OFFLINE_MODEL}
+    if not live or approved:
+        return
+    models = ", ".join(f"{role}={name}" for role, name in live.items())
+    raise ValueError(
+        f"live models need approval: {models}; about {runs} team runs, "
+        f"capped at ${cap_usd} of model spend; rerun with --approve-live to go ahead"
+    )
+
+
+def improve_run(
+    role: str,
+    *,
+    model: str | None = None,
+    reps: int = 3,
+    cap_usd: Any = DEFAULT_CAP_USD,
+    critic_model: str | None = None,
+    proposer_model: str | None = None,
+    max_workers: int = 4,
+    approve_live: bool = False,
+    harnesses_dir: Path = HARNESSES_DIR,
+    results_dir: Path = RESULTS_DIR,
+) -> dict[str, Any]:
+    """One candidate attempt for one agent of the team (see agent/loop.py)."""
+    from agent import loop, pieces, suite
+
+    if reps < 1:
+        raise ValueError(f"reps must be >= 1, got {reps}")
+    team_name = model or default_model()
+    agent_default = OFFLINE_MODEL if team_name == OFFLINE_MODEL else LIVE_AGENT_MODEL
+    names = {
+        "team": team_name,
+        "critic": critic_model or agent_default,
+        "proposer": proposer_model or agent_default,
+    }
+    splits = case_splits.load_splits(catalog.list_cases())
+    runs = (len(splits.train) + len(splits.valid)) * reps * 2
+    _approve_live(names, runs, cap_usd, approve_live)
+    budget = ModelBudget(cap_usd)
+    config = loop.LoopConfig(
+        role=role,  # type: ignore[arg-type]
+        reps=reps,
+        splits=splits,
+        critic_model=pieces.agent_model(
+            names["critic"], pieces.offline_critic(), budget
+        ),
+        proposer_model=pieces.agent_model(
+            names["proposer"], pieces.offline_proposer(), budget
+        ),
+        model_names=names,
+        harnesses_dir=harnesses_dir,
+        results_dir=results_dir,
+        lineage_file=harnesses_dir / "versions" / "lineage.jsonl",
+    )
+    compare = suite.workbench_compare(
+        pieces.team_model(team_name, budget),
+        results_dir=results_dir,
+        max_workers=max_workers,
+    )
+    attempt = loop.run_iteration(config, compare, budget)
+    return {
+        "attempt": attempt.model_dump(mode="json"),
+        "lineage_file": str(config.lineage_file),
+        "pin": loop.pin_instruction(attempt, harnesses_dir),
+    }
+
+
+def improve_test(
+    version: str,
+    *,
+    model: str | None = None,
+    reps: int = 3,
+    cap_usd: Any = DEFAULT_CAP_USD,
+    max_workers: int = 4,
+    approve_live: bool = False,
+    harnesses_dir: Path = HARNESSES_DIR,
+    results_dir: Path = RESULTS_DIR,
+) -> dict[str, Any]:
+    """Run the held-out test split for one team (a fingerprint or a team.yaml path)."""
+    from agent import loop, pieces, suite
+
+    team_name = model or default_model()
+    splits = case_splits.load_splits(catalog.list_cases())
+    _approve_live({"team": team_name}, len(splits.test) * reps, cap_usd, approve_live)
+    budget = ModelBudget(cap_usd)
+    compare = suite.workbench_compare(
+        pieces.team_model(team_name, budget),
+        results_dir=results_dir,
+        max_workers=max_workers,
+    )
+    return loop.run_test(
+        version,
+        splits=splits,
+        reps=reps,
+        compare=compare,
+        harnesses_dir=harnesses_dir,
+        lineage_file=harnesses_dir / "versions" / "lineage.jsonl",
+    )
+
+
+def results_review(
+    set_id: str,
+    run_id: str,
+    *,
+    critic_model: str = OFFLINE_MODEL,
+    cap_usd: Any = DEFAULT_CAP_USD,
+    approve_live: bool = False,
+    results_dir: Path = RESULTS_DIR,
+) -> dict[str, Any]:
+    """Project one saved run: spans per agent, role checks and the critic's validated blame."""
+    from agent import loop, pieces
+
+    _approve_live({"critic": critic_model}, 1, cap_usd, approve_live)
+    result_set = results.load_result_set(set_id, results_dir=results_dir)
+    record = results.find_run(result_set, run_id)
+    model = pieces.agent_model(
+        critic_model, pieces.offline_critic(), ModelBudget(cap_usd)
+    )
+    return loop.review_run(record, critic_model=model, results_dir=results_dir)
 
 
 # Requirements ------------------------------------------------------------------------
