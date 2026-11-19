@@ -1,6 +1,6 @@
 ---
 config:
-  layout: dagre
+  layout: elk
   look: classic
   theme: base
   themeVariables:
@@ -10,30 +10,31 @@ config:
     primaryTextColor: "#222222"
   flowchart:
     wrappingWidth: 240
-    nodeSpacing: 22
-    rankSpacing: 34
+    nodeSpacing: 34
+    rankSpacing: 72
 ---
 flowchart LR
   input(["Alerta, ticket,<br/>reclamação"])
   orchestrator["Orquestrador"]
-  network["Rede<br/>(só lê)"]
-  database["Base de dados<br/>(só lê)"]
-  remediation["Remediação<br/>(única que age)"]
-  approval{{"Aprovação<br/>on-call"}}
+  network["Rede<br/>(só leitura)"]
+  database["Base de dados<br/>(só leitura)"]
+  remediation["Remediação<br/>(única que atua)"]
+  reviewer["Revisor<br/>(só leitura)"]
+  approval{{"Aprovação<br/>por papel<br/>(se crítica)"}}
   simulator[("Simulador<br/>Meridian")]
-  reviewer["Revisor<br/>estado real<br/>(a ligar no workbench)"]
 
   input --> orchestrator
   orchestrator --> network
+  network -->|"diagnóstico"| orchestrator
   orchestrator --> database
-  network -->|"achado"| orchestrator
-  database -->|"achado"| orchestrator
-  orchestrator -->|"tarefa"| remediation
-  remediation --> approval
-  approval -->|"sim"| simulator
+  database -->|"diagnóstico"| orchestrator
+  orchestrator -->|"tarefa<br/>(+1 se falhar)"| remediation
   remediation -->|"relatório"| orchestrator
-  simulator --> reviewer
-  reviewer -->|"não: +1 vez"| remediation
+  remediation --> approval
+  approval -->|"aprovado"| simulator
+  orchestrator -->|"verificar"| reviewer
+  simulator -->|"estado real"| reviewer
+  reviewer -->|"veredito"| orchestrator
 
   classDef inputNode fill:#ffffff,stroke:#333333,color:#222222
   classDef agent fill:#1168bd,stroke:#5b9bd5,color:#ffffff
