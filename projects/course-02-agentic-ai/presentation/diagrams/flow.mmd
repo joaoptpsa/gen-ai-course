@@ -2,34 +2,44 @@
 config:
   layout: dagre
   look: classic
+  theme: base
+  themeVariables:
+    fontSize: "20px"
+    lineColor: "#333333"
+    edgeLabelBackground: "#e8e8e8"
+    primaryTextColor: "#222222"
   flowchart:
-    wrappingWidth: 320
+    wrappingWidth: 240
+    nodeSpacing: 22
+    rankSpacing: 34
 ---
 flowchart LR
-  input(["Alerta, ticket<br/>ou reclamação"])
+  input(["Alerta, ticket,<br/>reclamação"])
   orchestrator["Orquestrador"]
-  network["Rede"]
-  database["Base de dados"]
-  remediation["Remediação"]
-  approval{"Aprovação<br/>do on-call"}
+  network["Rede<br/>(só lê)"]
+  database["Base de dados<br/>(só lê)"]
+  remediation["Remediação<br/>(única que age)"]
+  approval{{"Aprovação<br/>on-call"}}
   simulator[("Simulador<br/>Meridian")]
-  reviewer["Revisor<br/>lê o estado real e<br/>só então dá por resolvido"]
+  reviewer["Revisor<br/>estado real<br/>(a ligar no workbench)"]
 
   input --> orchestrator
   orchestrator --> network
   orchestrator --> database
-  network -->|"NetworkFinding"| orchestrator
-  database -->|"Finding"| orchestrator
-  orchestrator -->|"com a evidência"| remediation
+  network -->|"achado"| orchestrator
+  database -->|"achado"| orchestrator
+  orchestrator -->|"tarefa"| remediation
   remediation --> approval
-  approval -->|"aprovada"| simulator
-  remediation -->|"RemediationReport"| orchestrator
+  approval -->|"sim"| simulator
+  remediation -->|"relatório"| orchestrator
   simulator --> reviewer
-  reviewer -->|"ainda não:<br/>mais uma tentativa"| remediation
+  reviewer -->|"não: +1 vez"| remediation
 
+  classDef inputNode fill:#ffffff,stroke:#333333,color:#222222
   classDef agent fill:#1168bd,stroke:#5b9bd5,color:#ffffff
   classDef gate fill:#b85c00,stroke:#e0a060,color:#ffffff
   classDef store fill:#4a4a4a,stroke:#9a9a9a,color:#ffffff
+  class input inputNode
   class orchestrator,network,database,remediation,reviewer agent
   class approval gate
   class simulator store

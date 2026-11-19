@@ -2,23 +2,31 @@
 config:
   layout: dagre
   look: classic
+  theme: base
+  themeVariables:
+    fontSize: "20px"
+    lineColor: "#333333"
+    edgeLabelBackground: "#e8e8e8"
+    primaryTextColor: "#222222"
   flowchart:
-    wrappingWidth: 320
+    wrappingWidth: 260
+    nodeSpacing: 24
+    rankSpacing: 36
 ---
 flowchart LR
   runs[("Execuções<br/>+ traces OTel")]
-  critic["Crítico<br/>culpa um agente ou handoff"]
+  critic["Crítico<br/>culpa agente ou handoff"]
   versions["1. Versões<br/>muda UM agente"]
   lessons["2. Lições<br/>memória por papel"]
   cases["3. Casos novos<br/>a partir de falhas"]
-  gate{"Treino ganha?<br/>Validação sem regressão?"}
+  gate{{"Treino ganha?<br/>Sem regressão<br/>na validação?"}}
 
   runs --> critic
   critic --> versions
   versions --> gate
   gate -->|"sim: nova versão"| runs
-  runs -->|"após cada incidente"| lessons
-  lessons -->|"lida antes de agir"| runs
+  runs -->|"após incidente"| lessons
+  lessons -->|"antes de agir"| runs
   critic --> cases
   cases -->|"revisão humana,<br/>só no treino"| runs
 
