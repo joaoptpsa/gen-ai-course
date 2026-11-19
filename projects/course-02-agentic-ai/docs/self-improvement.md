@@ -206,23 +206,39 @@ free, where `tools.trace` is a flat list with no agent attached.
                               ▼
    MaskingExporter: masks personal data once, before any export
                 ▼                                   ▼
-   file exporter (always on)              OTLP/HTTP exporter (Batch)
-   results/*.spans.json                   on when OTEL_EXPORTER_OTLP_ENDPOINT is set
-   → critic, GUI, evidence                → Jaeger, Phoenix, Langfuse or a vendor
+   run collector (always on)              OTLP/HTTP exporter (Batch)
+   results/<set>/<run_id>.spans.json      on when OTEL_EXPORTER_OTLP_ENDPOINT is set
+   → critic, GUI, evidence                → Tempo, shown in Grafana
 ```
 
 - **Standard variables only**: `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`,
-  `OTEL_EXPORTER_OTLP_HEADERS` (a backend token lives in `.env`; `.env.example` gets placeholders).
-  With none set, runs still write the local span file.
-- **OTLP over HTTP** via `opentelemetry-exporter-otlp-proto-http`, the one new dependency. OTLP is
-  vendor-neutral, so the backend stays a one-variable change.
+  `OTEL_EXPORTER_OTLP_HEADERS`. Runs export whenever the endpoint is set, with no extra flag; with
+  none set they still write the span file. Tests unset the endpoint.
+- **OTLP over HTTP** via `opentelemetry-exporter-otlp-proto-http`, which must be added to
+  `pyproject.toml` and the lock file. OTLP is vendor-neutral, so the backend stays a one-variable
+  change.
+- **Setup once, before the thread pool.** `app/core/telemetry.py` configures the provider in
+  `run_matrix` and the single-run path, under a lock. Lazy setup in `run_case` would let two
+  workers register processors twice, and a missing exporter would fail every run instead of
+  startup.
 - **Masking wraps the exporter.** A span processor sees spans after they end, when they can no
   longer change; the wrapper exports masked copies, so personal data leaves by neither path.
-  `results/` is committed, which makes this a hard requirement.
-- **Content capture on** (`InstrumentationSettings(include_content=True)`): the critic needs tool
-  results, and masking makes it safe. The critic reads the compact view, never raw spans.
-- **Local backend** from a container image (Jaeger all-in-one on `:4318`, or Phoenix), started by a
-  `bin/` script, not installed on the host.
+  `results/` is committed, which makes this a hard requirement. It masks every text field: the span
+  name, the status description, string and string-list attributes, event attributes (a raised
+  exception puts its message and stack trace there) and the resource. It masks first and caps
+  length after, since a cut can leave half an address the patterns no longer match.
+- **Content capture on**, with the format pinned
+  (`InstrumentationSettings(include_content=True, version=6)`): the critic needs tool results, and
+  masking makes it safe. The critic reads the compact view, never raw spans.
+- **One trace per run.** `run_case` creates the `run_id`, opens `workbench.run`, runs, adds the
+  effect events and the `meridian.evaluate` span, closes the root, drains the run's spans by
+  `trace_id`, then writes the file. Four runs in parallel threads keep separate traces (checked
+  with a stub model).
+- **Session 8 format.** The span file has `title`, `source` and `spans`, and root attributes use
+  the `meridian.` prefix, so session 8's `Trace` and its monitors read workbench runs unchanged.
+- **Backend: Tempo and Grafana.** `telemetry/docker-compose.yml` runs both on 127.0.0.1; set
+  `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:14318`. A workstation collector on `:4318` relays
+  to a shared Tempo instead, once that backend accepts traces.
 - The stub model emits spans too, so recording, role checks and blame validation test offline.
 
 References:
@@ -231,6 +247,7 @@ References:
 - Python exporters: <https://opentelemetry.io/docs/languages/python/exporters/>
 - GenAI semantic conventions: <https://opentelemetry.io/docs/specs/semconv/gen-ai/>
 - PydanticAI and OpenTelemetry: <https://ai.pydantic.dev/logfire/#using-opentelemetry>
+- Tempo configuration: <https://grafana.com/docs/tempo/latest/configuration/>
 
 ## Cost
 
@@ -241,17 +258,16 @@ by its agent count, which is why specialists are scored alone first. Critic and 
 
 ## Build Order
 
-1. Wrap the team as a workbench harness driven by version files, with the full tool set
+1. Record masked spans per run with file and OTLP export. Tracing lives in the runner, so it works
+   on the session harnesses before the team exists.
+2. Wrap the team as a workbench harness driven by version files, with the full tool set
    (`isolate_instance`, `failover`) and approval by role instead of a hard-coded "on-call"; add an
-   offline stub model that works on every case.
-2. Record masked spans per run with file and OTLP export, then role checks and blame on top.
+   offline stub model that works on every case. Then role checks and blame on its spans.
 3. Version loop over a single agent, with splits, decision rule and lineage.
 4. Lessons scoped per role.
 5. New cases targeting coordination failures.
 
 ## Open Decisions
 
-- Which OTLP backend: Jaeger, Phoenix, Langfuse or a vendor.
-- Whether runs export whenever the endpoint is set, or only with an `--export` flag.
 - The exact `ext-` halves for the training and test splits.
 - The cost cap per loop run.

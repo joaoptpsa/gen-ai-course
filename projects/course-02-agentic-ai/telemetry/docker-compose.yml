@@ -1,0 +1,79 @@
+---
+# Local trace backend for workbench runs: Tempo stores spans, Grafana shows them.
+# Ports bind to 127.0.0.1 only. OTLP uses 14318 because a workstation collector
+# may already hold the default 4318.
+name: course-02-telemetry
+services:
+  tempo:
+    image: grafana/tempo:latest
+    container_name: course-02-telemetry-tempo-container
+    command: -config.file=/etc/tempo/config.yaml
+    configs:
+      - source: tempo-config
+        target: /etc/tempo/config.yaml
+    mem_limit: 512m
+    ports:
+      - 127.0.0.1:14318:4318
+    volumes:
+      - tempo-data:/var/tempo
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: course-02-telemetry-grafana-container
+    depends_on:
+      - tempo
+    configs:
+      - source: grafana-datasources
+        target: /etc/grafana/provisioning/datasources/telemetry.yaml
+    environment:
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      # Local only: anyone reaching 127.0.0.1:3000 is admin, so no password to manage.
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: 'true'
+    mem_limit: 256m
+    ports:
+      - 127.0.0.1:3000:3000
+    volumes:
+      - grafana-data:/var/lib/grafana
+    restart: unless-stopped
+
+volumes:
+  tempo-data:
+  grafana-data:
+
+configs:
+  tempo-config:
+    content: |
+      stream_over_http_enabled: true
+      server:
+        http_listen_port: 3200
+      distributor:
+        receivers:
+          otlp:
+            protocols:
+              http:
+                endpoint: 0.0.0.0:4318
+      storage:
+        trace:
+          backend: local
+          wal:
+            path: /var/tempo/wal
+          local:
+            path: /var/tempo/blocks
+      usage_report:
+        reporting_enabled: false
+
+  grafana-datasources:
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Tempo
+          uid: tempo
+          type: tempo
+          access: proxy
+          url: http://tempo:3200
+          isDefault: true
+          editable: false

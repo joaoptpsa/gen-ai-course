@@ -54,6 +54,22 @@ bin/mrx-project cases write my-case.yaml --check my-check.yaml
 - A new action starts as a handler in `app/commands.py`; `app/cli.py` and the
   GUI only call it.
 
+## Tracing
+
+`telemetry/docker-compose.yml` runs Tempo, which stores traces, and Grafana,
+which shows them, both on 127.0.0.1:
+
+```bash
+docker compose --file telemetry/docker-compose.yml up --detach
+```
+
+Grafana is at <http://127.0.0.1:3000> (Explore, data source Tempo), with no
+login. Tempo takes OTLP on port 14318, since a workstation collector may already
+hold 4318; to send runs there, set
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:14318`. Traces are kept 14 days,
+Tempo's default. Adding `down --volumes` to the same command stops the stack
+and deletes its traces.
+
 ## Layout
 
 - `agent/`: code ported from the session starters and labs, still to be
@@ -61,6 +77,7 @@ bin/mrx-project cases write my-case.yaml --check my-check.yaml
   run them with `agent/` on the import path.
 - `docs/self-improvement.md`: design of the self-improving multi-agent team
   and its OpenTelemetry tracing and export.
+- `telemetry/`: the local Tempo and Grafana stack (see Tracing).
 - `cases/`, `checks/`: scenarios and their success criteria. Keep the two
   folders side by side: `meridian` looks up a case's check at
   `<case dir>/../checks/<id>.yaml`.
