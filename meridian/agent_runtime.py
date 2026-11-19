@@ -12,6 +12,8 @@ also define:
 - `run_agent(agent, prompt, *, deps, usage_limits, toolsets) -> report`: runs
   the agent in place of `agent.run_sync`, e.g. a team that fixes its order in code;
 - `run_attributes() -> dict`: extra attributes for the run's root span.
+- `run_handoffs(scratch) -> list | None` and `lesson_evidence(scratch) -> (uses, drafts)`: read by
+  the workbench runner after the run, from the run's `deps.scratch`.
 Sessions keep their harness files next to their exercises; this module only
 provides the plumbing to load a harness, run it and print the trace.
 """
@@ -194,14 +196,21 @@ def run_incident(
     memory_path: str | Path | None = None,
     use_memory: bool = True,
     role: str | None = None,
+    run_id: str | None = None,
 ) -> IncidentRun:
-    """Run one harness on one scenario. Evaluate it when a solution file exists."""
+    """Run one harness on one scenario. Evaluate it when a solution file exists.
+
+    `run_id` is kept in `deps.scratch["run_id"]` for harnesses that keep lessons, and the run's
+    `deps.scratch` is returned in `extra["scratch"]`.
+    """
     scenario = load_scenario(scenario_path)
     sim = Simulator(scenario)
     identity = identity_for(role or scenario.actor.get("role", "first-line"))
     tools = MeridianTools(sim, actor=identity["name"])
     memory = open_memory(scenario.memory_seed, memory_path) if use_memory else None
     deps = IncidentDeps(tools, memory, identity)
+    if run_id is not None:
+        deps.scratch["run_id"] = run_id
     agent = harness.build_agent(model or default_model())
     brief = sim.incident_brief()
     build_prompt: Callable[[dict[str, Any], IncidentDeps], str] = getattr(harness, "build_prompt", default_prompt)
@@ -231,6 +240,7 @@ def run_incident(
     run.extra["end_tick"] = sim.state.tick
     run.extra["identity"] = identity
     run.extra["memory"] = memory
+    run.extra["scratch"] = deps.scratch
     run.extra["input_tokens"] = sum(message.usage.input_tokens for message in all_messages if isinstance(message, ModelResponse))
     run.extra["requests"] = sum(1 for message in all_messages if isinstance(message, ModelResponse))
     solution_path = find_solution(scenario.scenario_id, solutions_dir, scenario_path)

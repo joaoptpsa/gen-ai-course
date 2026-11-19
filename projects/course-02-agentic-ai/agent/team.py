@@ -12,6 +12,7 @@ import asyncio
 from collections.abc import Sequence
 from typing import Any, Literal
 
+from agent.lessons import LessonSession, lesson_run_id
 from agent.offline import is_offline, offline_model
 from agent.team_tools import (
     MAX_ERROR_RATE,
@@ -21,9 +22,10 @@ from agent.team_tools import (
     RoleResult,
     Seat,
     TeamState,
+    lesson_toolset,
     state_recovered,
 )
-from agent.versions import Role, TeamVersion
+from agent.versions import ROLES, Role, TeamVersion
 from opentelemetry import trace
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext, capture_run_messages
@@ -156,17 +158,34 @@ class TeamAgent(Agent[IncidentDeps, Outcome]):
     specialists: dict[Role, Agent[Seat, Any]]
 
 
+def _lesson_sessions(deps: IncidentDeps) -> dict[Role, LessonSession]:
+    """One session per role when the run keeps lessons: it has a store and a run id."""
+    run_id = deps.scratch.get("run_id")
+    if deps.memory is None or run_id is None:
+        return {}
+    origin = lesson_run_id(run_id, deps.sim.scenario.scenario_id)
+    return {role: LessonSession(deps.memory, role, origin) for role in ROLES}
+
+
 def team_state(agent: TeamAgent, deps: IncidentDeps) -> TeamState:
     """The run's team state, created on first use and kept on the run's dependencies."""
     if "team" not in deps.scratch:
         sender = "orchestrator" if agent.team.topology == "orchestrator" else "pipeline"
-        deps.scratch["team"] = TeamState(
+        state = TeamState(
             version=agent.team,
             deps=deps,
             agents=dict(agent.specialists),
             sender=sender,
+            lessons=_lesson_sessions(deps),
+            started_tick=deps.sim.state.tick,
         )
+        deps.scratch["team"] = state
     return deps.scratch["team"]
+
+
+def scratch_state(scratch: dict[str, Any]) -> TeamState | None:
+    """The team state of a finished run, read from its dependencies' scratch."""
+    return scratch.get("team")
 
 
 def _ask_toolset(
@@ -260,6 +279,11 @@ def _request_limit(state: TeamState, role: Role) -> UsageLimits:
     return UsageLimits(request_limit=limit)
 
 
+def _extra_toolsets(*toolsets: Any) -> list[Any] | None:
+    present = [toolset for toolset in toolsets if toolset is not None]
+    return present or None
+
+
 async def invoke_role(role: Role, request: str, *, state: TeamState) -> RoleResult:
     """Run one specialist on one request and return its answer, or an explicit no-answer."""
     if state.usage is None:
@@ -282,6 +306,7 @@ async def invoke_role(role: Role, request: str, *, state: TeamState) -> RoleResu
                 deps=seat,
                 usage=state.usage,
                 usage_limits=_request_limit(state, role),
+                toolsets=_extra_toolsets(lesson_toolset(state, role)),
             )
             output = run.output
         except AgentRunError as error:
@@ -388,5 +413,8 @@ def run_sync(
 ) -> Outcome:
     if agent.team.topology == "pipeline":
         return asyncio.run(run_pipeline(agent, prompt, deps, limits))
-    result = agent.run_sync(prompt, deps=deps, usage_limits=limits, toolsets=toolsets)
+    state = team_state(agent, deps)
+    lessons = lesson_toolset(state, "orchestrator")
+    extra = _extra_toolsets(*(toolsets or []), lessons)
+    result = agent.run_sync(prompt, deps=deps, usage_limits=limits, toolsets=extra)
     return result.output

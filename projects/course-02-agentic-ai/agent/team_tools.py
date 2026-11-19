@@ -22,9 +22,11 @@ from agent.actions import (
     refused,
     unknown_status,
 )
+from agent.lessons import LessonDraft, LessonSession, LessonUse
 from agent.versions import Role, TeamVersion
 from pydantic import BaseModel, Field
 from pydantic_ai import RunContext
+from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from meridian.actions import split_failover_target
@@ -33,6 +35,7 @@ from meridian.security import ActionRequest, describe_action
 
 MAX_LATENCY_MS = 20
 MAX_ERROR_RATE = 0.01
+MAX_LESSON_DRAFTS_PER_ROLE = 3
 ACTIONS = ("rollback_change", "restart_instance", "isolate_instance", "failover")
 # Who may ask for these actions at all. An approval never widens this list.
 ACTOR_ACTIONS: dict[str, tuple[str, ...]] = {
@@ -91,6 +94,15 @@ class TeamState:
     tool_calls: Counter[str] = field(default_factory=Counter)
     requests: Counter[str] = field(default_factory=Counter)
     reviews: list[ReviewFact] = field(default_factory=list)
+    # One session per role, only when the run has a lesson store; drafts are the lessons the
+    # roles propose for the end of the run.
+    lessons: dict[Role, LessonSession] = field(default_factory=dict)
+    drafts: list[LessonDraft] = field(default_factory=list)
+    # The simulated tick the team started at; drafted lessons are valid from there.
+    started_tick: int = 0
+
+    def lesson_uses(self) -> list[LessonUse]:
+        return [use for session in self.lessons.values() for use in session.uses()]
 
     def bind_usage(self, usage: RunUsage, limits: UsageLimits | None) -> None:
         """Share the run's usage and request budget with the roles."""
@@ -411,3 +423,69 @@ def state_recovered(deps: IncidentDeps) -> bool | None:
     return (
         component.latency_ms < MAX_LATENCY_MS and component.error_rate < MAX_ERROR_RATE
     )
+
+
+# Lessons ------------------------------------------------------------------------------------
+
+
+def _request_handoff_id(state: TeamState, role: Role) -> str:
+    """The handoff that asked this role, or the newest one for a role nobody asked."""
+    asked = [
+        handoff.id
+        for handoff in state.handoffs
+        if handoff.recipient == role and handoff.kind == "request"
+    ]
+    if asked:
+        return asked[-1]
+    return state.handoffs[-1].id if state.handoffs else ""
+
+
+def lesson_toolset(state: TeamState, role: Role) -> FunctionToolset[Any] | None:
+    """The lesson tools of one role, or None when the run has no lesson store.
+
+    They sit beside the role's version-file tools and never widen what the role may change: they
+    read the role's own lessons, cite the ones it used and propose lessons for the end of the run.
+    """
+    session = state.lessons.get(role)
+    if session is None:
+        return None
+    sim = state.deps.sim
+
+    def read_lessons(subject: str) -> dict[str, Any]:
+        """Lessons your role learned in earlier incidents about a subject (a component name, or "*")."""
+        at = sim.clock.timestamp(sim.state.tick)
+        return {"lessons": session.read(subject, at)}
+
+    def cite_lessons(
+        lesson_ids: list[str], evidence_refs: list[str] | None = None
+    ) -> dict[str, Any]:
+        """Record the lessons you actually used, with the evidence_ref values that support them."""
+        refs = evidence_refs or []
+        unverified = unverified_evidence(state.deps, refs)
+        verified = [ref for ref in refs if ref not in unverified]
+        handoff_id = _request_handoff_id(state, role)
+        return {"cited": session.cite(lesson_ids, handoff_id, verified)}
+
+    def propose_lesson(
+        subject: str, text: str, confidence: float = 0.5
+    ) -> dict[str, Any]:
+        """Propose a lesson for your role from this incident; it is kept after the run is evaluated."""
+        mine = [draft for draft in state.drafts if draft.role == role]
+        if len(mine) >= MAX_LESSON_DRAFTS_PER_ROLE:
+            return {"error": "You already proposed the most lessons allowed."}
+        state.drafts.append(
+            LessonDraft(
+                role=role,
+                subject=subject,
+                text=text,
+                confidence=max(0.0, min(1.0, confidence)),
+                created_at=sim.clock.timestamp(state.started_tick),
+            )
+        )
+        return {"proposed": True}
+
+    toolset: FunctionToolset[Any] = FunctionToolset()
+    toolset.add_function(read_lessons)
+    toolset.add_function(cite_lessons)
+    toolset.add_function(propose_lesson)
+    return toolset

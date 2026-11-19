@@ -26,10 +26,12 @@ from agent import pieces
 from agent.decision import compare_cases, decide
 from agent.models import Attempt, Blame, Decision, Proposal
 from agent.suite import (
+    HARNESS_NAME,
     Compare,
     CompareRequest,
     load_staged_fingerprint,
     next_version,
+    raise_if_budget_exhausted,
     staged_team,
     team_pins,
     trusted_facts,
@@ -38,9 +40,10 @@ from agent.suite import (
 from agent.versions import ROLES, Role, RoleVersion, TeamVersion, load_team
 from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
 
+from app import commands
 from app.core.case_splits import CaseSplits
 from app.core.model_budget import BudgetExhaustedError, ModelBudget
-from app.core.results import ResultSet
+from app.core.results import ResultSet, load_result_set
 from app.core.runner import RunRecord
 from app.core.team_trace import (
     RoleVerdict,
@@ -82,6 +85,37 @@ class LoopConfig:
     @property
     def versions_dir(self) -> Path:
         return self.harnesses_dir / "versions"
+
+
+# Memory ----------------------------------------------------------------------------------------
+
+
+def snapshot_compare(
+    model: Any, *, memory_snapshot: Path, results_dir: Path, max_workers: int = 4
+) -> Compare:
+    """The workbench compare with one memory snapshot: every run copies it and learns nothing.
+
+    The arms of a comparison start from the same memory, so a candidate cannot win by what a
+    baseline run wrote down.
+    """
+
+    def compare(request: CompareRequest) -> ResultSet:
+        outcome = commands.compare(
+            [HARNESS_NAME],
+            request.case_ids,
+            reps=request.reps,
+            model=model,
+            max_workers=max_workers,
+            save_label=request.label,
+            memory_snapshot=memory_snapshot,
+            harnesses_dir=request.harnesses_dir,
+            results_dir=results_dir,
+        )
+        saved = load_result_set(outcome["result_set"], results_dir=results_dir)
+        raise_if_budget_exhausted(saved.runs)
+        return saved
+
+    return compare
 
 
 # Lineage ---------------------------------------------------------------------------------------
@@ -416,4 +450,5 @@ __all__ = [
     "review_run",
     "run_iteration",
     "run_test",
+    "snapshot_compare",
 ]

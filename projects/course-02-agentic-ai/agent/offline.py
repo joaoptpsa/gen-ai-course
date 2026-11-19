@@ -229,6 +229,28 @@ def _unavailable(steps: list[Step]) -> list[str]:
     ]
 
 
+def _lesson_follow_up(
+    steps: list[Step],
+    tools: set[str],
+    subject: str,
+    proposal: str | None = None,
+) -> ModelResponse | None:
+    """Cite the lessons that were read, or propose `proposal` when there were none."""
+    if "read_lessons" not in tools:
+        return None
+    lessons = (_ok(_done(steps, "read_lessons")) or {}).get("lessons", [])
+    if lessons:
+        if "cite_lessons" not in tools or _done(steps, "cite_lessons") is not None:
+            return None
+        ids = [lesson["lesson_id"] for lesson in lessons]
+        return _call("cite_lessons", lesson_ids=ids, evidence_refs=_refs(steps))
+    if proposal is None or "propose_lesson" not in tools:
+        return None
+    if _done(steps, "propose_lesson") is not None:
+        return None
+    return _call("propose_lesson", subject=subject, text=proposal)
+
+
 # Network -------------------------------------------------------------------------------------
 
 
@@ -237,6 +259,7 @@ def _network(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     tools = {tool.name for tool in info.function_tools}
     component = _component(_prompt(messages))
     plan: list[tuple[str, dict[str, Any]]] = [
+        ("read_lessons", {"subject": component}),
         ("recent_changes", {"limit": 10}),
         ("read_logs", {"component": component, "limit": 40}),
         ("read_metrics", {"component": component, "window_ticks": 3}),
@@ -282,6 +305,11 @@ def _network(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     if missing:
         parts.append(f"no answer from {', '.join(sorted(set(missing)))}")
     cause = f"{component}: " + ("; ".join(parts) or "no change or warning found")
+    if not _retrying(messages):
+        learned = f"{component}: " + "; ".join(parts) if parts else None
+        follow_up = _lesson_follow_up(steps, tools, component, learned)
+        if follow_up is not None:
+            return follow_up
     evidence = _refs(steps)
     if chosen is not None:
         evidence.append(chosen["change_id"])
@@ -296,6 +324,7 @@ def _database(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     steps = _steps(messages)
     tools = {tool.name for tool in info.function_tools}
     plan: list[tuple[str, dict[str, Any]]] = [
+        ("read_lessons", {"subject": "reference-db"}),
         ("search_tickets", {}),
         ("read_logs", {"component": "reference-db", "limit": 40}),
         ("read_metrics", {"component": "reference-db", "window_ticks": 3}),
@@ -309,6 +338,10 @@ def _database(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         if pending:
             return _batch(pending)
 
+    if not _retrying(messages):
+        follow_up = _lesson_follow_up(steps, tools, "reference-db")
+        if follow_up is not None:
+            return follow_up
     tickets = (_ok(_done(steps, "search_tickets")) or {}).get("tickets", [])
     constraints = []
     for ticket in tickets:
@@ -437,6 +470,7 @@ def _remediation(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse
     component = _component(task)
     retrying = _retrying(messages)
     reads: list[tuple[str, dict[str, Any]]] = [
+        ("read_lessons", {"subject": component}),
         ("recent_changes", {"limit": 10}),
         (
             "read_metrics",
@@ -452,6 +486,11 @@ def _remediation(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse
         ]
         if pending:
             return _batch(pending)
+
+    if not retrying:
+        follow_up = _lesson_follow_up(steps, tools, component)
+        if follow_up is not None:
+            return follow_up
 
     acted = [step for step in steps if step.name in _ACTION_TOOLS]
     blocked = [
@@ -505,10 +544,14 @@ def _reviewer(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     if not _retrying(messages):
         if _done(steps, "read_metrics") is None:
             first = [
+                ("read_lessons", {"subject": component}),
                 ("read_metrics", {"component": component, "window_ticks": 3}),
                 ("read_logs", {"component": component, "limit": 20}),
             ]
             return _batch([(name, args) for name, args in first if name in tools])
+        follow_up = _lesson_follow_up(steps, tools, component)
+        if follow_up is not None:
+            return follow_up
         settling = _settling_read(steps, tools, component)
         if settling is not None:
             return settling
@@ -549,8 +592,15 @@ def _orchestrator(messages: list[ModelMessage], info: AgentInfo) -> ModelRespons
             for name in ("ask_network", "ask_database")
             if name in tools
         ]
+        if "read_lessons" in tools:
+            parts.insert(0, ToolCallPart("read_lessons", {"subject": component}))
         if parts:
             return ModelResponse(parts=parts)
+
+    if not retrying:
+        follow_up = _lesson_follow_up(steps, tools, component)
+        if follow_up is not None:
+            return follow_up
 
     network = _answer(_done(steps, "ask_network"))
     database = _answer(_done(steps, "ask_database"))

@@ -7,11 +7,14 @@ LookupError, ValueError or FileExistsError with a readable message on bad input.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import tempfile
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+from agent.lessons import memory_fingerprint, snapshot_memory
 
 from app.core import (
     authoring,
@@ -90,6 +93,74 @@ def cases_write(
     )
 
 
+def cases_draft(
+    set_id: str,
+    run_id: str,
+    *,
+    span_id: str | None = None,
+    model: str = "offline",
+    cap_usd: Any = DEFAULT_CAP_USD,
+    approve_live: bool = False,
+    cases_dir: Path = CASES_DIR,
+    checks_dir: Path = CHECKS_DIR,
+    results_dir: Path = RESULTS_DIR,
+) -> dict[str, Any]:
+    """Draft a training case from one saved failing training run. Nothing is written.
+
+    The blamed span is `span_id`, or the critic's validated blame (same model as the author).
+    The pair goes to a human; `cases write` admits it after review.
+    """
+    from agent import case_drafts, loop, pieces
+    from agent.suite import trusted_facts
+
+    from app.core import team_trace
+
+    _approve_live({"author": model}, 1 if span_id else 2, cap_usd, approve_live)
+    record = results.find_run(
+        results.load_result_set(set_id, results_dir=results_dir), run_id
+    )
+    splits = case_splits.load_splits(
+        catalog.list_cases(cases_dir=cases_dir, checks_dir=checks_dir)
+    )
+    split = splits.split_of(record.case_id)
+    if split != "train":
+        raise ValueError(
+            f"run {record.run_id} is a {record.case_id} run, which is not in the train "
+            f"split ({split or 'unassigned'}); only training failures may seed a case"
+        )
+    if not record.spans_file:
+        raise LookupError(f"run {record.run_id} has no saved spans")
+    trace = team_trace.project_trace(
+        team_trace.load_spans(results_dir / record.spans_file)
+    )
+    facts = trusted_facts(record, checks_dir=checks_dir)
+    verdicts = team_trace.check_roles(trace, facts)
+    budget = ModelBudget(cap_usd)
+    blamed = span_id
+    if blamed is None:
+        critic = pieces.agent_model(model, pieces.offline_critic(), budget)
+        review = loop.review_run(record, critic_model=critic, results_dir=results_dir)
+        if review["blame"] is None:
+            raise ValueError(
+                f"the critic gave no usable blame: {review['blame_error']}"
+            )
+        blamed = review["blame"]["span_id"]
+    if blamed not in trace.spans:
+        raise LookupError(f"span {blamed!r} is not in the spans of run {record.run_id}")
+    failure = case_drafts.summarize_failure(
+        trace, set_id, blamed, verdicts, split="train"
+    )
+    author = pieces.agent_model(model, case_drafts.offline_author(), budget)
+    draft = case_drafts.draft_case(
+        failure, author, cases_dir=cases_dir, checks_dir=checks_dir
+    )
+    return {
+        **draft.model_dump(mode="json"),
+        "source_case_id": record.case_id,
+        "blamed_span_id": blamed,
+    }
+
+
 def cases_round_trip_loss(
     original_scenario: str,
     original_check: str | None,
@@ -162,8 +233,9 @@ def run(
     *,
     model: Any = None,
     approver: str | None = None,
-    max_requests: int = 20,
+    max_requests: int | None = None,
     save_label: str | None = None,
+    memory: Path | None = None,
     cases_dir: Path = CASES_DIR,
     checks_dir: Path = CHECKS_DIR,
     harnesses_dir: Path = HARNESSES_DIR,
@@ -171,7 +243,11 @@ def run(
     results_dir: Path = RESULTS_DIR,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
-    """Run one harness on one case. `approver` overrides the scenario's approver ("approve_all", "deny_all", "roles:a,b")."""
+    """Run one harness on one case. `approver` overrides the scenario's approver ("approve_all", "deny_all", "roles:a,b").
+
+    `memory` is a persistent store the team keeps lessons in: it is read during the run and
+    settled after the evaluation.
+    """
     harness_info = catalog.get_harness(
         harness, harnesses_dir=harnesses_dir, sessions_dir=sessions_dir
     )
@@ -185,6 +261,7 @@ def run(
         max_requests=max_requests,
         checks_dir=checks_dir,
         repo_root=repo_root,
+        memory_path=memory,
     )
     saved = (
         results.save_result_set(
@@ -203,11 +280,12 @@ def compare(
     reps: int = 1,
     model: Any = None,
     approver: str | None = None,
-    max_requests: int = 20,
+    max_requests: int | None = None,
     max_workers: int = 4,
     baseline: str | None = None,
     by: Literal["harness_case", "case"] = "harness_case",
     save_label: str | None = None,
+    memory_snapshot: Path | None = None,
     on_progress: Progress | None = None,
     cases_dir: Path = CASES_DIR,
     checks_dir: Path = CHECKS_DIR,
@@ -216,7 +294,11 @@ def compare(
     results_dir: Path = RESULTS_DIR,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
-    """Run every harness on every case `reps` times; all cases when `case_ids` is None."""
+    """Run every harness on every case `reps` times; all cases when `case_ids` is None.
+
+    With `memory_snapshot`, every run gets its own frozen copy of that memory file, and the source
+    must be unchanged when the matrix ends.
+    """
     if not harnesses:
         raise ValueError("compare needs at least one harness")
     if reps < 1:
@@ -246,21 +328,23 @@ def compare(
         if on_progress:
             on_progress(done, total, record.to_dict())
 
-    records = runner.run_matrix(
-        [
-            (harness.name, harness.path, case.path)
-            for harness in chosen_harnesses
-            for case in chosen_cases
-        ],
-        reps=reps,
-        model=model,
-        approver=runner.parse_approver(approver) if approver else None,
-        max_requests=max_requests,
-        max_workers=max_workers,
-        on_progress=report_progress,
-        checks_dir=checks_dir,
-        repo_root=repo_root,
-    )
+    with _source_unchanged(memory_snapshot) as source_fingerprint:
+        records = runner.run_matrix(
+            [
+                (harness.name, harness.path, case.path)
+                for harness in chosen_harnesses
+                for case in chosen_cases
+            ],
+            reps=reps,
+            model=model,
+            approver=runner.parse_approver(approver) if approver else None,
+            max_requests=max_requests,
+            max_workers=max_workers,
+            on_progress=report_progress,
+            checks_dir=checks_dir,
+            repo_root=repo_root,
+            memory_snapshot=memory_snapshot,
+        )
     saved = (
         results.save_result_set(
             records, save_label, results_dir=results_dir, repo_root=repo_root
@@ -274,8 +358,26 @@ def compare(
         if baseline_runs is not None
         else None,
         "result_set": saved.set_id if saved else None,
+        "memory_fingerprint": source_fingerprint,
         "runs": [record.to_dict() for record in records],
     }
+
+
+@contextmanager
+def _source_unchanged(path: Path | None) -> Iterator[str]:
+    """Yield the memory file's fingerprint; fail when it differs after the block."""
+    if path is None:
+        yield ""
+        return
+    if not Path(path).is_file():
+        raise LookupError(f"memory snapshot {path} does not exist")
+    before = memory_fingerprint(path)
+    yield before
+    after = memory_fingerprint(path)
+    if after != before:
+        raise RuntimeError(
+            f"memory snapshot {path} changed during the run: {before[:12]} -> {after[:12]}"
+        )
 
 
 # Saved results -----------------------------------------------------------------------
@@ -331,10 +433,15 @@ def improve_run(
     proposer_model: str | None = None,
     max_workers: int = 4,
     approve_live: bool = False,
+    memory_snapshot: Path | None = None,
     harnesses_dir: Path = HARNESSES_DIR,
     results_dir: Path = RESULTS_DIR,
 ) -> dict[str, Any]:
-    """One candidate attempt for one agent of the team (see agent/loop.py)."""
+    """One candidate attempt for one agent of the team (see agent/loop.py).
+
+    Every run starts from a fresh empty store, or from its own frozen copy of `memory_snapshot`
+    with the lessons of test-split cases removed.
+    """
     from agent import loop, pieces, suite
 
     if reps < 1:
@@ -365,17 +472,50 @@ def improve_run(
         results_dir=results_dir,
         lineage_file=harnesses_dir / "versions" / "lineage.jsonl",
     )
-    compare = suite.workbench_compare(
-        pieces.team_model(team_name, budget),
-        results_dir=results_dir,
-        max_workers=max_workers,
-    )
-    attempt = loop.run_iteration(config, compare, budget)
+    team = pieces.team_model(team_name, budget)
+    with _eligible_snapshot(memory_snapshot, splits.test) as (eligible, fingerprint):
+        compare = (
+            suite.workbench_compare(
+                team, results_dir=results_dir, max_workers=max_workers
+            )
+            if eligible is None
+            else loop.snapshot_compare(
+                team,
+                memory_snapshot=eligible,
+                results_dir=results_dir,
+                max_workers=max_workers,
+            )
+        )
+        attempt = loop.run_iteration(config, compare, budget)
     return {
         "attempt": attempt.model_dump(mode="json"),
         "lineage_file": str(config.lineage_file),
         "pin": loop.pin_instruction(attempt, harnesses_dir),
+        "memory_fingerprint": fingerprint,
     }
+
+
+@contextmanager
+def _eligible_snapshot(
+    source: Path | None, test_cases: list[str]
+) -> Iterator[tuple[Path | None, str]]:
+    """A copy of the memory without the lessons of test-split cases, and its fingerprint.
+
+    The source must be unchanged afterwards. Lessons carry their origin case in `source_ref`
+    (`<run>@<case>`), so the filter needs no saved results.
+    """
+    if source is None:
+        yield None, ""
+        return
+    with (
+        _source_unchanged(source),
+        tempfile.TemporaryDirectory(prefix="workbench-eligible-") as directory,
+    ):
+        eligible = Path(directory) / "memory.db"
+        fingerprint = snapshot_memory(
+            source, eligible, frozen=True, exclude_cases=test_cases
+        )
+        yield eligible, fingerprint
 
 
 def improve_test(

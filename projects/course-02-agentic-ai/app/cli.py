@@ -86,7 +86,10 @@ def _add_model_options(parser: argparse.ArgumentParser) -> None:
         "--approver", help='"approve_all", "deny_all" or "roles:a,b" (overrides case)'
     )
     parser.add_argument(
-        "--max-requests", type=int, default=20, help="model request limit per run"
+        "--max-requests",
+        type=int,
+        default=None,
+        help="model request limit per run (default: the harness's own, else 20)",
     )
 
 
@@ -132,6 +135,24 @@ def _add_cases(subparsers: Any, common: argparse.ArgumentParser) -> None:
     write.add_argument("--check", type=Path, help="check file for the scenario")
     write.add_argument("--force", action="store_true", help="overwrite existing files")
 
+    draft = _command(
+        sub,
+        "draft",
+        "draft a training case from one saved failing training run; writes nothing",
+        _cases_draft,
+        _render_draft,
+        common,
+    )
+    draft.add_argument("set_id")
+    draft.add_argument("run_id", help="run id (a unique prefix is enough)")
+    draft.add_argument(
+        "--span", help="span id to build the case around (default: the critic's blame)"
+    )
+    draft.add_argument(
+        "--model", default="offline", help='author model (default: "offline")'
+    )
+    _add_live_options(draft)
+
     _command(
         sub,
         "schema",
@@ -174,6 +195,12 @@ def _add_runs(subparsers: Any, common: argparse.ArgumentParser) -> None:
     run.add_argument("case_id")
     _add_model_options(run)
     run.add_argument("--save", metavar="LABEL", help="save the run as a result set")
+    run.add_argument(
+        "--memory",
+        type=Path,
+        metavar="PATH",
+        help="persistent memory store: the team reads its lessons and learns from the run",
+    )
 
     compare = _command(
         subparsers,
@@ -200,6 +227,12 @@ def _add_runs(subparsers: Any, common: argparse.ArgumentParser) -> None:
     )
     compare.add_argument(
         "--save", metavar="LABEL", help="save the runs as a result set"
+    )
+    compare.add_argument(
+        "--memory-snapshot",
+        type=Path,
+        metavar="PATH",
+        help="memory file every run copies and reads frozen (default: an empty store per run)",
     )
 
 
@@ -284,6 +317,12 @@ def _add_improve(subparsers: Any, common: argparse.ArgumentParser) -> None:
     )
     run.add_argument("--proposer-model", help="default: as the critic")
     run.add_argument("--workers", type=int, default=4, help="parallel runs")
+    run.add_argument(
+        "--memory-snapshot",
+        type=Path,
+        metavar="PATH",
+        help="memory file each run copies frozen, minus lessons of test-split cases",
+    )
     _add_live_options(run)
     test = _command(
         sub,
@@ -426,6 +465,17 @@ def _cases_write(args: argparse.Namespace) -> Any:
     return commands.cases_write(scenario, check, force=args.force)
 
 
+def _cases_draft(args: argparse.Namespace) -> Any:
+    return commands.cases_draft(
+        args.set_id,
+        args.run_id,
+        span_id=args.span,
+        model=args.model,
+        cap_usd=args.cap_usd,
+        approve_live=args.approve_live,
+    )
+
+
 def _cases_schema(_args: argparse.Namespace) -> Any:
     return commands.authoring_schema()
 
@@ -446,6 +496,7 @@ def _run(args: argparse.Namespace) -> Any:
         approver=args.approver,
         max_requests=args.max_requests,
         save_label=args.save,
+        memory=args.memory,
     )
 
 
@@ -468,6 +519,7 @@ def _compare(args: argparse.Namespace) -> Any:
         baseline=args.baseline,
         by=args.by,
         save_label=args.save,
+        memory_snapshot=args.memory_snapshot,
         on_progress=_print_progress,
     )
 
@@ -504,6 +556,7 @@ def _improve_run(args: argparse.Namespace) -> Any:
         proposer_model=args.proposer_model,
         max_workers=args.workers,
         approve_live=args.approve_live,
+        memory_snapshot=args.memory_snapshot,
     )
 
 
@@ -669,10 +722,46 @@ def _render_run(result: dict[str, Any]) -> None:
         f"tokens={record['input_tokens']} requests={record['requests']} "
         f"end_tick={record['end_tick']}"
     )
+    _render_lessons(record)
     if record["error"]:
         print(f"error: {record['error']}")
     if result["result_set"]:
         print(f"saved: {result['result_set']}")
+
+
+def _render_lessons(record: dict[str, Any]) -> None:
+    lessons = record["lessons"]
+    if record["memory_fingerprint"]:
+        print(f"memory at start: {record['memory_fingerprint'][:12]}")
+    for use in lessons.get("cited", []):
+        refs = ", ".join(use["evidence_refs"]) or "no evidence refs"
+        blamed = " IMPLICATED" if use["implicated"] else ""
+        print(f"lesson cited by {use['role']}: {use['lesson_id']} ({refs}){blamed}")
+    for update in lessons.get("updates", []):
+        print(f"lesson {update['action']}: {update['result_id']}")
+
+
+def _render_draft(result: dict[str, Any]) -> None:
+    print(f"draft {result['case_id']} ({result['kind']})")
+    print(
+        f"source: set {result['source_set_id']}, run {result['source_run_id']} "
+        f"({result['source_case_id']}), span {result['blamed_span_id']}"
+    )
+    print("\n# scenario\n" + result["scenario_yaml"].rstrip())
+    print("\n# check\n" + result["check_yaml"].rstrip())
+    print("\nrehearsal:")
+    for item in result["rehearsal"]:
+        wanted = "pass" if item["expected_pass"] else "fail"
+        got = "passed" if item["passed"] else "failed"
+        print(f"  {item['trajectory']}: expected {wanted}, {got}")
+        for check in item["checks"]:
+            mark = "✓" if check["passed"] else "✗"
+            print(f"    {mark} {check['name']}: {check['detail']}")
+    name = result["case_id"]
+    print(
+        "\nNothing was written. After review, save the two YAMLs above and admit them with:\n"
+        f"  bin/mrx-project cases write {name}.yaml --check {name}.check.yaml"
+    )
 
 
 def _summary_table(summary: list[dict[str, Any]]) -> str:

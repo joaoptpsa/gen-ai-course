@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections.abc import Collection
 from contextlib import closing
 from pathlib import Path
 from typing import Any, Literal
@@ -29,6 +30,9 @@ from meridian.memory import MemoryRecord, MemoryStore
 LESSON_KIND = "lesson"
 ANY_SUBJECT = "*"
 CONFIRMATION_STEP = 0.2
+# A lesson's source_ref names the run and the case it came from, so a snapshot can drop the
+# lessons of held-out cases without the saved result sets.
+RUN_CASE_SEPARATOR = "@"
 
 Outcome = Literal["passed", "failed", "unevaluated"]
 Action = Literal["created", "confirmed", "superseded", "retired"]
@@ -133,6 +137,17 @@ def _valid_at(record: MemoryRecord, at: str) -> bool:
         return False
     expired = record.valid_until is not None and record.valid_until < at
     return not expired
+
+
+def lesson_run_id(run_id: str, case_id: str) -> str:
+    """The run id lessons carry as their origin: `<run>@<case>`."""
+    return f"{run_id}{RUN_CASE_SEPARATOR}{case_id}"
+
+
+def lesson_case_id(source_ref: str) -> str | None:
+    """The case a lesson's origin run belongs to; None for a ref written without one."""
+    _, separator, case_id = source_ref.partition(RUN_CASE_SEPARATOR)
+    return case_id if separator else None
 
 
 # Settlement ---------------------------------------------------------------------------------
@@ -383,11 +398,18 @@ def forget_lesson(
 
 
 def snapshot_memory(
-    source: str | Path, destination: str | Path, *, frozen: bool = True
+    source: str | Path,
+    destination: str | Path,
+    *,
+    frozen: bool = True,
+    exclude_cases: Collection[str] = (),
 ) -> str:
     """Copy a memory file with SQLite's backup API and return the content fingerprint.
 
     The source is opened read-only and never modified. With `frozen`, the copy refuses to learn.
+    Lessons whose origin run belongs to a case in `exclude_cases` are dropped from the copy, with
+    every lesson linked to them by supersession and their settlements, so held-out experience
+    cannot reach a comparison through memory.
     The fingerprint covers memories, deletions and settlements, so two copies of the same source
     have the same fingerprint whether or not they are frozen.
     """
@@ -403,9 +425,45 @@ def snapshot_memory(
     with closing(sqlite3.connect(destination_path)) as copy, copy:
         for statement in _TABLES:
             copy.execute(statement)
+        if exclude_cases:
+            _drop_cases(copy, set(exclude_cases))
         if frozen:
             copy.execute("INSERT INTO lesson_frozen VALUES (1)")
     return memory_fingerprint(destination_path)
+
+
+def _drop_cases(connection: sqlite3.Connection, case_ids: set[str]) -> None:
+    """Remove what held-out runs wrote or touched (a confirmation moved a lesson's confidence)."""
+    rows = connection.execute(
+        "SELECT memory_id, source_ref, supersedes FROM memories WHERE kind = ?",
+        (LESSON_KIND,),
+    ).fetchall()
+    events = connection.execute(
+        "SELECT run_id, memory_id, result_id FROM lesson_events"
+    ).fetchall()
+    doomed = {
+        memory_id for memory_id, ref, _ in rows if lesson_case_id(ref) in case_ids
+    }
+    for run_id, memory_id, result_id in events:
+        if lesson_case_id(run_id) in case_ids:
+            doomed.update((memory_id, result_id))
+    grew = True
+    while grew:
+        before = len(doomed)
+        for memory_id, _, supersedes in rows:
+            if supersedes is None:
+                continue
+            if memory_id in doomed or supersedes in doomed:
+                doomed.update((memory_id, supersedes))
+        grew = len(doomed) > before
+    for memory_id in doomed:
+        connection.execute("DELETE FROM memories WHERE memory_id = ?", (memory_id,))
+    for run_id, memory_id, result_id in events:
+        if doomed & {memory_id, result_id} or lesson_case_id(run_id) in case_ids:
+            connection.execute(
+                "DELETE FROM lesson_events WHERE run_id = ? AND memory_id = ?",
+                (run_id, memory_id),
+            )
 
 
 def memory_fingerprint(path: str | Path) -> str:
