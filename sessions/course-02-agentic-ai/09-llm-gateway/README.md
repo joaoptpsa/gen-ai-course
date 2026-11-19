@@ -14,8 +14,8 @@ language models. Every request goes through one **LLM gateway**: yours. On Black
 uv run --locked streamlit run sessions/course-02-agentic-ai/09-llm-gateway/lab/app.py
 ```
 
-Needs `OPENAI_API_KEY` in the repository's `.env`. Click **What to try** (top right).
-The small and large models are `gpt-4.1-nano` and `gpt-4.1`; change them with `OPENAI_MODEL_SMALL` and `OPENAI_MODEL_LARGE`.
+Needs `ANTHROPIC_API_KEY` in the repository's `.env`. Click **What to try** (top right).
+The small and large models are `claude-haiku-5-5` and `claude-sonnet-5-5`; change them with `ANTHROPIC_MODEL_SMALL` and `ANTHROPIC_MODEL_LARGE`.
 "Provider B" (the backup) is simulated: in the lab it is the same strong model, priced 25% higher, so one API key is enough.
 
 ## The exercise (in `starter/`)
