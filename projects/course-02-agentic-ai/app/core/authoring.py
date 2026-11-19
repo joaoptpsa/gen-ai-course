@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from agent.coordination import SECTION as COORDINATION_SECTION
+from agent.coordination import validate_coordination
 
 from app.paths import CASES_DIR, CHECKS_DIR
 from meridian.agent_runtime import load_identities
@@ -20,7 +22,8 @@ SCENARIO_KEYS = {
     for field in dataclasses.fields(Scenario)
 } - {"path"}
 
-# Keys read by meridian.evaluate.evaluate, plus root_cause, which existing checks carry as documentation.
+# Keys read by meridian.evaluate.evaluate, plus root_cause, which existing checks carry as documentation,
+# and the coordination section, which the workbench judges from team handoffs (agent.coordination).
 CHECK_KEYS = {
     "scenario",
     "root_cause",
@@ -39,6 +42,7 @@ CHECK_KEYS = {
     "budget",
     "pii",
     "order",
+    COORDINATION_SECTION,
 }
 
 SCENARIO_REQUIRED_KEYS = ("id", "title", "incident")
@@ -195,6 +199,8 @@ def validate_check_text(text: str, scenario_id: str) -> list[str]:
         errors.append(
             f"check scenario {data['scenario']!r} does not match scenario id {scenario_id!r}"
         )
+    if COORDINATION_SECTION in data:
+        errors += validate_coordination(data[COORDINATION_SECTION])
     return errors
 
 
