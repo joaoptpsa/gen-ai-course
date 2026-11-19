@@ -29,7 +29,8 @@ deleted information.
 from __future__ import annotations
 
 import sqlite3
-from contextlib import closing
+from collections.abc import Generator
+from contextlib import closing, contextmanager
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
@@ -70,7 +71,9 @@ class MemoryStore:
                 "memory_id TEXT PRIMARY KEY, kind TEXT, subject TEXT, content TEXT, source_type TEXT, source_ref TEXT, "
                 "author TEXT, team TEXT, created_at TEXT, valid_until TEXT, confidence REAL, status TEXT, supersedes TEXT)"
             )
-            connection.execute("CREATE TABLE IF NOT EXISTS deletions (memory_id TEXT, deleted_at TEXT, deleted_by TEXT, reason TEXT)")
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS deletions (memory_id TEXT, deleted_at TEXT, deleted_by TEXT, reason TEXT)"
+            )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path)
@@ -81,9 +84,17 @@ class MemoryStore:
         count = connection.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
         deleted = connection.execute("SELECT COUNT(*) FROM deletions").fetchone()[0]
         number = count + deleted + 1
-        while connection.execute("SELECT 1 FROM memories WHERE memory_id = ?", (f"MEM-{number:04d}",)).fetchone():
+        while connection.execute(
+            "SELECT 1 FROM memories WHERE memory_id = ?", (f"MEM-{number:04d}",)
+        ).fetchone():
             number += 1
         return f"MEM-{number:04d}"
+
+    @contextmanager
+    def transaction(self) -> Generator[sqlite3.Connection]:
+        """One connection whose writes, including `add_within`, commit or roll back together."""
+        with closing(self._connect()) as connection, connection:
+            yield connection
 
     # Writing ---------------------------------------------------------------
 
@@ -103,11 +114,9 @@ class MemoryStore:
         supersedes: str | None = None,
         memory_id: str | None = None,
     ) -> MemoryRecord:
-        if source_type not in SOURCE_TYPES:
-            raise ValueError(f"source_type must be one of {SOURCE_TYPES}")
-        with closing(self._connect()) as connection, connection:
-            record = MemoryRecord(
-                memory_id=memory_id or self._next_id(connection),
+        with self.transaction() as connection:
+            record = self.add_within(
+                connection,
                 kind=kind,
                 subject=subject,
                 content=content,
@@ -117,14 +126,66 @@ class MemoryStore:
                 team=team,
                 created_at=created_at,
                 valid_until=valid_until,
-                confidence=max(0.0, min(1.0, float(confidence))),
+                confidence=confidence,
                 supersedes=supersedes,
+                memory_id=memory_id,
             )
-            placeholders = ", ".join("?" for _ in _COLUMNS)
-            connection.execute(f"INSERT OR IGNORE INTO memories ({', '.join(_COLUMNS)}) VALUES ({placeholders})", [getattr(record, name) for name in _COLUMNS])
-            if supersedes:
-                connection.execute("UPDATE memories SET status = 'superseded' WHERE memory_id = ?", (supersedes,))
         return record
+
+    def add_within(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        kind: str,
+        subject: str,
+        content: str,
+        source_type: str,
+        source_ref: str,
+        author: str,
+        team: str,
+        created_at: str,
+        valid_until: str | None = None,
+        confidence: float = 0.5,
+        supersedes: str | None = None,
+        memory_id: str | None = None,
+    ) -> MemoryRecord:
+        """Add a memory inside a caller's `transaction()`, so it commits with the caller's other writes."""
+        if source_type not in SOURCE_TYPES:
+            raise ValueError(f"source_type must be one of {SOURCE_TYPES}")
+        record = MemoryRecord(
+            memory_id="",
+            kind=kind,
+            subject=subject,
+            content=content,
+            source_type=source_type,
+            source_ref=source_ref,
+            author=author,
+            team=team,
+            created_at=created_at,
+            valid_until=valid_until,
+            confidence=max(0.0, min(1.0, float(confidence))),
+            supersedes=supersedes,
+        )
+        self._insert(connection, record, memory_id)
+        return record
+
+    def _insert(
+        self,
+        connection: sqlite3.Connection,
+        record: MemoryRecord,
+        memory_id: str | None,
+    ) -> None:
+        record.memory_id = memory_id or self._next_id(connection)
+        placeholders = ", ".join("?" for _ in _COLUMNS)
+        connection.execute(
+            f"INSERT OR IGNORE INTO memories ({', '.join(_COLUMNS)}) VALUES ({placeholders})",
+            [getattr(record, name) for name in _COLUMNS],
+        )
+        if record.supersedes:
+            connection.execute(
+                "UPDATE memories SET status = 'superseded' WHERE memory_id = ?",
+                (record.supersedes,),
+            )
 
     def update(self, memory_id: str, **changes: Any) -> MemoryRecord:
         unknown = set(changes) - set(_COLUMNS) - {"memory_id"}
@@ -134,21 +195,33 @@ class MemoryStore:
         if changes:
             with closing(self._connect()) as connection, connection:
                 assignments = ", ".join(f"{name} = ?" for name in changes)
-                connection.execute(f"UPDATE memories SET {assignments} WHERE memory_id = ?", [*changes.values(), memory_id])
+                connection.execute(
+                    f"UPDATE memories SET {assignments} WHERE memory_id = ?",
+                    [*changes.values(), memory_id],
+                )
         return self.get(memory_id)
 
-    def delete(self, memory_id: str, *, deleted_at: str, deleted_by: str, reason: str) -> bool:
+    def delete(
+        self, memory_id: str, *, deleted_at: str, deleted_by: str, reason: str
+    ) -> bool:
         with closing(self._connect()) as connection, connection:
-            removed = connection.execute("DELETE FROM memories WHERE memory_id = ?", (memory_id,)).rowcount
+            removed = connection.execute(
+                "DELETE FROM memories WHERE memory_id = ?", (memory_id,)
+            ).rowcount
             if removed:
-                connection.execute("INSERT INTO deletions VALUES (?, ?, ?, ?)", (memory_id, deleted_at, deleted_by, reason))
+                connection.execute(
+                    "INSERT INTO deletions VALUES (?, ?, ?, ?)",
+                    (memory_id, deleted_at, deleted_by, reason),
+                )
         return bool(removed)
 
     # Reading ---------------------------------------------------------------
 
     def get(self, memory_id: str) -> MemoryRecord:
         with closing(self._connect()) as connection:
-            row = connection.execute("SELECT * FROM memories WHERE memory_id = ?", (memory_id,)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM memories WHERE memory_id = ?", (memory_id,)
+            ).fetchone()
         if row is None:
             raise KeyError(f"Unknown memory: {memory_id}")
         return MemoryRecord(**dict(row))
@@ -186,7 +259,9 @@ class MemoryStore:
             query += " AND status = 'active'"
         words = [word for word in (text or "").lower().split() if len(word) > 2]
         if words:
-            query += " AND (" + " OR ".join("LOWER(content) LIKE ?" for _ in words) + ")"
+            query += (
+                " AND (" + " OR ".join("LOWER(content) LIKE ?" for _ in words) + ")"
+            )
             params.extend(f"%{word}%" for word in words)
         query += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
@@ -199,7 +274,10 @@ class MemoryStore:
 
     def deletions(self) -> list[dict[str, Any]]:
         with closing(self._connect()) as connection:
-            return [dict(row) for row in connection.execute("SELECT * FROM deletions").fetchall()]
+            return [
+                dict(row)
+                for row in connection.execute("SELECT * FROM deletions").fetchall()
+            ]
 
     def seed(self, records: list[dict[str, Any]]) -> None:
         """Add records from a scenario (memories from earlier shifts). Existing ids are kept."""
