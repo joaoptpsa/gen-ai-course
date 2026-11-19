@@ -166,18 +166,19 @@ The critic reads OpenTelemetry spans. Spans nest, so each agent's subtree, cost 
 free, where `tools.trace` is a flat list with no agent attached.
 
 ```text
- workbench.run  {run_id, case_id, team_version}            ← root span we add
- └─ invoke_agent orchestrator
-    ├─ execute_tool ask_network
-    │  └─ invoke_agent network
-    │     ├─ execute_tool check_link  {args, result}
-    │     └─ execute_tool recent_changes
-    ├─ execute_tool ask_remediation
-    │  └─ invoke_agent remediation
-    │     ├─ execute_tool request_approval
-    │     └─ execute_tool rollback_change   + event meridian.effect
-    └─ execute_tool ask_reviewer → invoke_agent reviewer
- meridian.evaluate  {check: passed/failed, names only}     ← span we add
+ workbench.run  {meridian.run_id, case_id, harness, model}  ← root span we add
+ │  events: meridian.tool_call {step, tick, time, tool}, meridian.approval
+ ├─ invoke_agent orchestrator
+ │  ├─ execute_tool ask_network
+ │  │  └─ invoke_agent network
+ │  │     ├─ execute_tool check_link  {args, result}
+ │  │     └─ execute_tool recent_changes
+ │  ├─ execute_tool ask_remediation
+ │  │  └─ invoke_agent remediation
+ │  │     ├─ execute_tool request_approval
+ │  │     └─ execute_tool rollback_change
+ │  └─ execute_tool ask_reviewer → invoke_agent reviewer
+ └─ meridian.evaluate  {checks_passed, checks_failed: names only}  ← span we add
 
         │ split by trace_id, masked, saved as results/<set>/<run>.spans.json
         ▼
@@ -189,8 +190,9 @@ free, where `tools.trace` is a flat list with no agent attached.
 1. **Recording.** The runner enables `Agent.instrument_all` and wraps each run in a `workbench.run`
    root span. Instrumentation is global and runs execute in threads, so spans are grouped by
    `trace_id` under that root, not by thread.
-2. **Simulator facts.** The runner adds what PydanticAI cannot know: `meridian.effect` and approval
-   events, and a `meridian.evaluate` span with each check's verdict. Check names and verdicts only:
+2. **Simulator facts.** The runner adds what PydanticAI cannot know: a `meridian.tool_call`
+   event per simulator tool call (step, simulated tick and time), a `meridian.approval` event per
+   approval, and a `meridian.evaluate` span with each check's verdict. Check names and verdicts only:
    a check's detail (for example the expected change id) would hand the answer to the proposer.
 3. **Code before the LLM.** Ordering, actions outside a role and cost per agent are computed from
    spans. The critic judges only what code cannot, such as whether a finding fits the evidence read.

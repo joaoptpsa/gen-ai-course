@@ -56,6 +56,12 @@ bin/mrx-project cases write my-case.yaml --check my-check.yaml
 
 ## Tracing
 
+Every run is traced with OpenTelemetry (`app/core/telemetry.py`): PydanticAI's
+agent, model and tool spans under one `workbench.run` root, with personal data
+masked. `--save` writes each run's spans to
+`results/<set id>/<run id>.spans.json`, in the session 8 lab's trace format.
+Runs also export over OTLP whenever `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+
 `telemetry/docker-compose.yml` runs Tempo, which stores traces, and Grafana,
 which shows them, both on 127.0.0.1:
 

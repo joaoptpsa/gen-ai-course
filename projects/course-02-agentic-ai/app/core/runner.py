@@ -9,13 +9,15 @@ import threading
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+from opentelemetry.trace import Span
 
+from app.core import telemetry
 from app.paths import CHECKS_DIR, REPO_ROOT
 from meridian.agent_runtime import (
     default_model,
@@ -75,6 +77,11 @@ class RunRecord:
     trace: list[dict[str, Any]]
     approvals: list[dict[str, Any]]
     messages: list[dict[str, str]]
+    # Records saved before tracing have no trace, hence the defaults.
+    trace_id: str = ""
+    spans_file: str | None = None
+    # Masked span records; saved to their own file (spans_file), never inside the record.
+    spans: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def outcome(self) -> Outcome:
@@ -82,6 +89,7 @@ class RunRecord:
 
     def to_dict(self) -> dict[str, Any]:
         record = asdict(self)
+        del record["spans"]
         record["outcome"] = self.outcome
         return record
 
@@ -168,6 +176,7 @@ def run_case(
     if model is None:
         require_api_key()
         model = default_model()
+    tracing = telemetry.configure_tracing()
     commit, dirty = git_state(repo_root)
     with _HARNESS_LOADING:
         harness = load_harness(harness_path)
@@ -176,22 +185,36 @@ def run_case(
         "max_requests": max_requests,
         "solutions_dir": checks_dir,
     }
+    run_id = uuid.uuid4().hex[:8]
+    name = harness_name or Path(harness_path).stem
+    model_name = _model_name(model)
+    root_attributes = {
+        "meridian.run_id": run_id,
+        "meridian.harness": name,
+        "meridian.case_path": str(case_path),
+        "meridian.model": model_name,
+        "meridian.approver": json.dumps(approver or {}),
+        "meridian.commit": commit,
+        "meridian.dirty": dirty,
+    }
     started_at = _now()
     started = datetime.now(timezone.utc)
-    if approver is None:
-        run = run_incident(harness, case_path, **options)
-    else:
-        run = _run_with_approver(harness, case_path, approver, **options)
+    with telemetry.run_span(tracing, root_attributes) as run_trace:
+        if approver is None:
+            run = run_incident(harness, case_path, **options)
+        else:
+            run = _run_with_approver(harness, case_path, approver, **options)
+        _trace_simulator_facts(tracing, run_trace.root, run)
     duration = (datetime.now(timezone.utc) - started).total_seconds()
 
     evaluation = run.evaluation
     return RunRecord(
-        run_id=uuid.uuid4().hex[:8],
-        harness=harness_name or Path(harness_path).stem,
+        run_id=run_id,
+        harness=name,
         harness_path=str(harness_path),
         case_id=run.scenario_id,
         case_path=str(case_path),
-        model=_model_name(model),
+        model=model_name,
         approver=approver or {},
         commit=commit,
         dirty=dirty,
@@ -214,7 +237,54 @@ def run_case(
         messages=[
             {"kind": kind, "text": text} for kind, text in model_trace(run.messages)
         ],
+        trace_id=run_trace.trace_id,
+        spans=run_trace.spans,
     )
+
+
+def _event_value(value: Any) -> Any:
+    if isinstance(value, (bool, int, float, str)):
+        return value
+    return json.dumps(value, default=str)
+
+
+def _trace_simulator_facts(
+    tracing: telemetry.Tracing, root: Span, run: Any
+) -> None:
+    """Add what PydanticAI cannot see: the simulator's tool log, approvals and check verdicts.
+
+    Verdicts carry check names only. A check's detail can hold the expected answer (a change
+    id, say), which a proposer reading the trace must not see.
+    """
+    root.set_attribute("meridian.case_id", run.scenario_id)
+    root.set_attribute("meridian.end_tick", int(run.extra.get("end_tick", 0)))
+    if run.error:
+        root.set_attribute("meridian.error", run.error)
+    for call in run.trace:
+        attributes = {
+            "meridian.step": call.step,
+            "meridian.tick": call.tick,
+            "meridian.time": call.time,
+            "meridian.tool": call.tool,
+        }
+        if call.error:
+            attributes["meridian.error"] = call.error
+        root.add_event("meridian.tool_call", attributes)
+    for approval in run.sim.approvals:
+        attributes = {
+            f"meridian.{key}": _event_value(value) for key, value in approval.items()
+        }
+        root.add_event("meridian.approval", attributes)
+    evaluation = run.evaluation
+    if evaluation is None:
+        return
+    passed = [check.name for check in evaluation.checks if check.passed]
+    failed = [check.name for check in evaluation.checks if not check.passed]
+    root.set_attribute("meridian.passed", bool(evaluation.passed))
+    with tracing.tracer.start_as_current_span("meridian.evaluate") as span:
+        span.set_attribute("meridian.passed", bool(evaluation.passed))
+        span.set_attribute("meridian.checks_passed", passed)
+        span.set_attribute("meridian.checks_failed", failed)
 
 
 def _error_record(
@@ -268,6 +338,8 @@ def run_matrix(
     if model is None:
         require_api_key()
         model = default_model()
+    # Tracing is set up once, before the workers, so they share one provider.
+    telemetry.configure_tracing()
     jobs = [(name, harness, case) for name, harness, case in runs for _ in range(reps)]
 
     def run_job(job: tuple[str, Path, Path]) -> RunRecord:

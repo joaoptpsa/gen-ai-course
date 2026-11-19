@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from app.core.masking import mask_personal_data
 from app.core.runner import RunRecord, git_state
 from app.paths import REPO_ROOT, RESULTS_DIR
 
@@ -65,6 +66,28 @@ def _truncated_copy(run: RunRecord, max_chars: int) -> RunRecord:
     return RunRecord.from_dict(json.loads(json.dumps(data)))
 
 
+def _save_spans(run: RunRecord, set_id: str, results_dir: Path) -> str | None:
+    """Write a run's spans as `<set_id>/<run_id>.spans.json`; return that path relative to results.
+
+    The file has the shape of the session 8 lab's traces, so its Trace class reads it.
+    """
+    if not run.spans:
+        return None
+    relative = f"{set_id}/{run.run_id}.spans.json"
+    trace = {
+        "title": mask_personal_data(f"{run.harness} · {run.case_id} · {run.model}"),
+        "source": f"workbench run {run.run_id}",
+        "recorded_at": run.started_at,
+        "spans": run.spans,
+    }
+    path = results_dir / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(trace, indent=1, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    return relative
+
+
 def save_result_set(
     runs: list[RunRecord],
     label: str,
@@ -85,6 +108,8 @@ def save_result_set(
         runs=[_truncated_copy(run, max_result_chars) for run in runs],
     )
     results_dir.mkdir(parents=True, exist_ok=True)
+    for run, saved in zip(runs, result_set.runs):
+        saved.spans_file = _save_spans(run, result_set.set_id, results_dir)
     path = results_dir / f"{result_set.set_id}.json"
     path.write_text(
         json.dumps(result_set.to_dict(), indent=2, ensure_ascii=False) + "\n",
