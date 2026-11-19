@@ -41,8 +41,53 @@ bin/mrx-project cases validate my-case.yaml --check my-check.yaml
 bin/mrx-project cases write my-case.yaml --check my-check.yaml
 ```
 
+The self-improving team (see `docs/self-improvement.md`) runs offline, with no
+API calls, through the `offline` model:
+
+```bash
+# The team on one case; --memory keeps lessons between runs in a SQLite file.
+bin/mrx-project run project/team s01-gateway-latency --model offline --memory /tmp/lessons.db
+
+# Every run copies the snapshot frozen: no run learns, and the source stays unchanged.
+bin/mrx-project compare --harness project/team --model offline --reps 2 --workers 4 \
+  --memory-snapshot /tmp/lessons.db --save team-snapshot
+
+# Critic's blame for one saved run, then a training case drafted from it (nothing is written).
+bin/mrx-project results review <set-id> <run-id>
+bin/mrx-project cases draft <set-id> <run-id> [--span <span-id>] [--model offline|<model>] [--approve-live]
+
+# One candidate attempt for one agent, then the held-out test of a team.
+bin/mrx-project improve run --role network --model offline --reps 1 [--memory-snapshot /tmp/lessons.db]
+bin/mrx-project improve test --version <team fingerprint or team.yaml> --model offline
+```
+
 - `--offline` runs with a test model: no API calls, no cost. Without it, `run`
   and `compare` call the model from `.env`, or the one given with `--model`.
+- `--model offline` is a deterministic stand-in for every agent of the team
+  (`agent/offline.py`): no API key, no cost, and it finishes every case. It is
+  not the `--offline` flag, which uses pydantic's test model for the session
+  harnesses. Live models in `improve`, `results review` and `cases draft` need
+  `--approve-live`, and `--cap-usd` (default 5.00) stops spending.
+- Lessons: with `--memory` or `--memory-snapshot` each role gets
+  `read_lessons`, `cite_lessons` and `propose_lesson` tools. After the run is
+  evaluated, lessons it cited are confirmed, and the lessons the team proposed
+  are kept. A snapshot is frozen, so it is read but never changed. Without
+  either option a run keeps no lessons. A run record has `memory_fingerprint`
+  (the memory it started with) and `lessons` (what was cited and settled).
+  After a failed run, a lesson cited by a role whose role check failed is
+  retired, with the check name and span ids as evidence.
+- `--max-requests` defaults to the harness's `DEFAULT_MAX_REQUESTS` (40 for the
+  team, which makes lessons fit) and else to 20; a run record keeps the limit.
+- `improve run` appends every attempt to `harnesses/versions/lineage.jsonl` and
+  never edits `harnesses/team.yaml`; a kept version is a new file under
+  `harnesses/versions/<role>/`, and a human pins it. With `--memory-snapshot`
+  it first copies the file without the lessons of test-split cases, whose
+  `source_ref` is `<run>@<case>`.
+- `cases draft` takes a saved failing run of a training case only, and prints a
+  case and a check with a `coordination:` section, the source ids and a
+  rehearsal of a good and a failing trajectory. Review the YAML, then admit it
+  with `cases write`. A check with a `coordination:` section is judged on the
+  team's handoffs, so other harnesses fail it explicitly.
 - `--json` prints any command's result as JSON. In a run record read `outcome`
   (`passed`, `failed`, `not_evaluated` or `errored`), not `passed`: that is the
   evaluation's verdict and can be true for a run that ended without a report.

@@ -1,10 +1,36 @@
 # Self-Improving Incident Team
 
 A design note for the project's main focus: a multi-agent incident team that improves itself, scored
-by the workbench and traced with OpenTelemetry. Nothing here is built yet; the build order is at the
-end.
+by the workbench and traced with OpenTelemetry. All five build steps are built and run offline;
+the build order is at the end, and the README has the commands.
+
+## What Is Built
+
+- The team runs as `project/team` from version files, with an offline stub model (`--model
+  offline`), role checks and blame on its spans (`results review`).
+- `app/case-splits.yaml` assigns every case to train, valid or test; `improve run` makes one
+  candidate attempt for one role and decides on the train and valid sets; `improve test` runs the
+  test set for a sealed team. Attempts are appended to `harnesses/versions/lineage.jsonl`.
+- Lessons live in the memory store per role (`agent/lessons.py`). `run --memory` learns;
+  `compare --memory-snapshot` and `improve run --memory-snapshot` give every run its own frozen
+  copy and check the source is unchanged. The loop's copy drops lessons whose origin case is in
+  the test split: a lesson's `source_ref` is `<run id>@<case id>`.
+- `cases draft` turns a saved failing training run into a case and a check with a
+  `coordination:` section; `run` appends those checks, judged on the team's handoffs, to the
+  evaluation.
+
+Simplifications:
+
+- Role checks use end-of-run recovery state.
+- A candidate is not yet scored alone on a sub-task before the team run; only the full team is
+  compared.
+- Lesson tools sit beside the version-file tools and are not part of a version, so a proposer
+  cannot remove them. A failed run retires the lessons cited by a role whose own role check failed; no
+  correction is written, so nothing is superseded yet.
 
 ## Starting Point
+
+The section below is the state before the build.
 
 - `harnesses/` is empty: the workbench can only run the read-only session harnesses.
 - The session 6 lab has a working improvement loop (critic, proposer, keep-or-discard decision,
@@ -278,5 +304,7 @@ by its agent count, which is why specialists are scored alone first. Critic and 
 
 ## Open Decisions
 
-- The exact `ext-` halves for the training and test splits.
-- The cost cap per loop run.
+Decided defaults:
+
+- The `ext-` halves of the training and test splits: see `app/case-splits.yaml`.
+- The cost cap per live loop run: $5 (`--cap-usd`), and $0 offline.
