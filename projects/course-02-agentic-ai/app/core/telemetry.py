@@ -51,6 +51,8 @@ KEPT_ATTRIBUTES = (
     "gen_ai.request.model",
     "gen_ai.usage.input_tokens",
     "gen_ai.usage.output_tokens",
+    # Dollars, priced by PydanticAI through genai-prices; absent when the model has no price.
+    "operation.cost",
     "gen_ai.tool.name",
     "gen_ai.tool.call.arguments",
     "gen_ai.tool.call.result",
@@ -178,6 +180,12 @@ class RunCollector(SpanExporter):
                 self._spans.setdefault(trace_id, []).append(span)
         return SpanExportResult.SUCCESS
 
+    def spans_of(self, trace_id: int) -> list[ReadableSpan]:
+        """The spans of one trace finished so far, left in place."""
+        with self._lock:
+            spans = list(self._spans.get(trace_id, []))
+        return spans
+
     def take(self, trace_id: int) -> list[ReadableSpan]:
         """Remove and return the spans of one trace."""
         with self._lock:
@@ -209,7 +217,9 @@ def otlp_endpoint_set() -> bool:
 
 def _build_tracing() -> Tracing:
     # OTEL_SERVICE_NAME, when set, wins over the workbench's own name.
-    attributes = {} if os.environ.get("OTEL_SERVICE_NAME") else {"service.name": SERVICE_NAME}
+    attributes = (
+        {} if os.environ.get("OTEL_SERVICE_NAME") else {"service.name": SERVICE_NAME}
+    )
     # Every span is kept: a sampler set through OTEL_TRACES_SAMPLER would leave runs without
     # the span files the results rely on.
     provider = TracerProvider(
@@ -252,6 +262,57 @@ def configure_tracing() -> Tracing:
 # One trace per run -----------------------------------------------------------------------
 
 
+def _usage(chats: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Model calls, tokens and cost of some `chat` spans; no cost when none had a price."""
+    costs = [
+        float(chat["operation.cost"]) for chat in chats if "operation.cost" in chat
+    ]
+    usage: dict[str, Any] = {
+        "meridian.model_calls": len(chats),
+        "meridian.input_tokens": sum(
+            int(chat.get("gen_ai.usage.input_tokens", 0)) for chat in chats
+        ),
+        "meridian.output_tokens": sum(
+            int(chat.get("gen_ai.usage.output_tokens", 0)) for chat in chats
+        ),
+    }
+    if costs:
+        usage["meridian.cost_usd"] = sum(costs)
+    return usage
+
+
+def _chats(spans: Sequence[ReadableSpan]) -> list[dict[str, Any]]:
+    attributes = [dict(span.attributes or {}) for span in spans]
+    chats = [item for item in attributes if item.get("gen_ai.operation.name") == "chat"]
+    return chats
+
+
+def _record_usage(
+    tracer: Tracer, root: Span, run_id: Any, spans: Sequence[ReadableSpan]
+) -> None:
+    """Put the run's usage on the root, and each agent's on its own `meridian.agent_usage` span.
+
+    Tempo 3.0 drops spans when `sum_over_time` adds up several spans in one series, so the
+    dashboard sums only series that hold one span each: one per trace, or one per agent and trace.
+    Model-call spans also lack the run's harness, case and model, which the root carries.
+    """
+    chats = _chats(spans)
+    root.set_attributes(_usage(chats))
+    by_agent: dict[str, list[dict[str, Any]]] = {}
+    for chat in chats:
+        by_agent.setdefault(str(chat.get("gen_ai.agent.name", "agent")), []).append(
+            chat
+        )
+    for agent, agent_chats in sorted(by_agent.items()):
+        attributes = {"meridian.agent": agent, **_usage(agent_chats)}
+        if run_id is not None:
+            attributes["meridian.run_id"] = run_id
+        with tracer.start_as_current_span(
+            "meridian.agent_usage", attributes=attributes
+        ):
+            pass
+
+
 @dataclass
 class RunTrace:
     """The root span of one run while it is open; `spans` holds the masked span records after."""
@@ -276,7 +337,14 @@ def run_span(tracing: Tracing, attributes: Mapping[str, Any]) -> Generator[RunTr
         ) as root:
             trace_id = root.get_span_context().trace_id
             run_trace = RunTrace(root, f"{trace_id:032x}")
-            yield run_trace
+            try:
+                yield run_trace
+            finally:
+                # A run that raises has still spent tokens; record them before the root ends.
+                finished = tracing.collector.spans_of(trace_id)
+                _record_usage(
+                    tracing.tracer, root, attributes.get("meridian.run_id"), finished
+                )
     finally:
         spans = tracing.collector.take(trace_id)
     run_trace.spans = span_records(spans)

@@ -241,6 +241,13 @@ free, where `tools.trace` is a flat list with no agent attached.
 - **Backend: Tempo and Grafana.** `telemetry/docker-compose.yml` runs both on 127.0.0.1; set
   `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:14318`. A workstation collector on `:4318` relays
   to a shared Tempo instead, once that backend accepts traces.
+- **Cost on the trace.** PydanticAI prices each `chat` span (`operation.cost`, from
+  `genai-prices`). Before the root closes, the runner writes the run's model calls, tokens and
+  cost onto it and adds one `meridian.agent_usage` span per agent, so cost per agent is in the
+  trace the critic reads, and the dashboard can group cost by harness, case, model and agent.
+- **One span per summed series.** Tempo 3.0 returned one run's cost, not the total, when
+  `sum_over_time` added several spans in one series (seen at most step sizes, not traced to an
+  upstream issue). The dashboard sums only series grouped by run id and lets Grafana add them.
 - The stub model emits spans too, so recording, role checks and blame validation test offline.
 
 References:

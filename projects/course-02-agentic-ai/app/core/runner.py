@@ -191,6 +191,8 @@ def run_case(
     root_attributes = {
         "meridian.run_id": run_id,
         "meridian.harness": name,
+        # The file name until the scenario's own id is known; a run that raises keeps it.
+        "meridian.case_id": case_path.stem,
         "meridian.case_path": str(case_path),
         "meridian.model": model_name,
         "meridian.approver": json.dumps(approver or {}),
@@ -248,9 +250,7 @@ def _event_value(value: Any) -> Any:
     return json.dumps(value, default=str)
 
 
-def _trace_simulator_facts(
-    tracing: telemetry.Tracing, root: Span, run: Any
-) -> None:
+def _trace_simulator_facts(tracing: telemetry.Tracing, root: Span, run: Any) -> None:
     """Add what PydanticAI cannot see: the simulator's tool log, approvals and check verdicts.
 
     Verdicts carry check names only. A check's detail can hold the expected answer (a change
@@ -276,6 +276,11 @@ def _trace_simulator_facts(
         }
         root.add_event("meridian.approval", attributes)
     evaluation = run.evaluation
+    # The workbench's own verdict, so the dashboard agrees with saved results.
+    root.set_attribute(
+        "meridian.outcome",
+        outcome_of(run.error, evaluation.passed if evaluation else None),
+    )
     if evaluation is None:
         return
     passed = [check.name for check in evaluation.checks if check.passed]

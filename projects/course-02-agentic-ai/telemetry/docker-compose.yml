@@ -26,6 +26,10 @@ services:
     configs:
       - source: grafana-datasources
         target: /etc/grafana/provisioning/datasources/telemetry.yaml
+      - source: grafana-dashboard-provider
+        target: /etc/grafana/provisioning/dashboards/telemetry.yaml
+      - source: grafana-meridian-workbench-dashboard
+        target: /var/lib/grafana-dashboards/meridian-workbench.json
     environment:
       GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
       GF_ANALYTICS_REPORTING_ENABLED: 'false'
@@ -51,6 +55,8 @@ configs:
       server:
         http_listen_port: 3200
       distributor:
+        # Span files cap values at 4000 characters; the default 2048 bytes would cut them here.
+        max_attribute_bytes: 16384
         receivers:
           otlp:
             protocols:
@@ -77,3 +83,1419 @@ configs:
           url: http://tempo:3200
           isDefault: true
           editable: false
+
+  grafana-dashboard-provider:
+    content: |
+      apiVersion: 1
+      providers:
+        - name: telemetry
+          type: file
+          disableDeletion: false
+          allowUiUpdates: false
+          options:
+            path: /var/lib/grafana-dashboards
+
+  # Inline so Compose writes it world-readable; a bind-mounted file keeps the checkout's
+  # permissions, which the grafana user may not read. $$ is a literal $ for Compose.
+  # yamllint disable rule:line-length
+  grafana-meridian-workbench-dashboard:
+    content: |
+      {
+        "uid": "meridian-workbench",
+        "title": "Meridian workbench",
+        "description": "Course 2 incident-agent runs traced by the workbench: outcomes, cost, time, agents and tools.",
+        "tags": [
+          "meridian",
+          "workbench"
+        ],
+        "editable": false,
+        "schemaVersion": 41,
+        "time": {
+          "from": "now-24h",
+          "to": "now"
+        },
+        "refresh": "",
+        "templating": {
+          "list": [
+            {
+              "name": "harness",
+              "label": "Harness",
+              "type": "query",
+              "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+              },
+              "query": {
+                "refId": "TempoDatasourceVariableQueryEditor-VariableQuery",
+                "type": 1,
+                "label": "meridian.harness"
+              },
+              "definition": "meridian.harness",
+              "refresh": 2,
+              "multi": true,
+              "includeAll": true,
+              "allValue": ".*",
+              "current": {
+                "selected": true,
+                "text": [
+                  "All"
+                ],
+                "value": [
+                  "$$__all"
+                ]
+              },
+              "sort": 1
+            },
+            {
+              "name": "case_id",
+              "label": "Case",
+              "type": "query",
+              "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+              },
+              "query": {
+                "refId": "TempoDatasourceVariableQueryEditor-VariableQuery",
+                "type": 1,
+                "label": "meridian.case_id"
+              },
+              "definition": "meridian.case_id",
+              "refresh": 2,
+              "multi": true,
+              "includeAll": true,
+              "allValue": ".*",
+              "current": {
+                "selected": true,
+                "text": [
+                  "All"
+                ],
+                "value": [
+                  "$$__all"
+                ]
+              },
+              "sort": 1
+            },
+            {
+              "name": "model",
+              "label": "Model",
+              "type": "query",
+              "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+              },
+              "query": {
+                "refId": "TempoDatasourceVariableQueryEditor-VariableQuery",
+                "type": 1,
+                "label": "meridian.model"
+              },
+              "definition": "meridian.model",
+              "refresh": 2,
+              "multi": true,
+              "includeAll": true,
+              "allValue": ".*",
+              "current": {
+                "selected": true,
+                "text": [
+                  "All"
+                ],
+                "value": [
+                  "$$__all"
+                ]
+              },
+              "sort": 1
+            }
+          ]
+        },
+        "panels": [
+          {
+            "id": 1,
+            "type": "row",
+            "title": "Overview",
+            "collapsed": false,
+            "gridPos": {
+              "x": 0,
+              "y": 0,
+              "w": 24,
+              "h": 1
+            },
+            "panels": []
+          },
+          {
+            "id": 2,
+            "type": "stat",
+            "title": "Runs",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 0,
+              "y": 1,
+              "w": 4,
+              "h": 4
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} | count_over_time()",
+                "metricsQueryType": "range"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "none",
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              "overrides": []
+            },
+            "options": {
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": false
+              },
+              "colorMode": "none",
+              "graphMode": "none",
+              "textMode": "value"
+            }
+          },
+          {
+            "id": 3,
+            "type": "stat",
+            "title": "Passed",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 4,
+              "y": 1,
+              "w": 4,
+              "h": 4
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\" && span.meridian.outcome=\"passed\"} | count_over_time()",
+                "metricsQueryType": "range"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "none",
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              "overrides": []
+            },
+            "options": {
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": false
+              },
+              "colorMode": "none",
+              "graphMode": "none",
+              "textMode": "value"
+            },
+            "description": "Runs whose checks all passed, with no error."
+          },
+          {
+            "id": 4,
+            "type": "stat",
+            "title": "Errored",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 8,
+              "y": 1,
+              "w": 4,
+              "h": 4
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\" && (span.meridian.outcome=\"errored\" || status=error)} | count_over_time()",
+                "metricsQueryType": "range"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "none",
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              "overrides": []
+            },
+            "options": {
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": false
+              },
+              "colorMode": "none",
+              "graphMode": "none",
+              "textMode": "value"
+            },
+            "description": "Runs that stopped without a report (usage limit, agent error) or raised."
+          },
+          {
+            "id": 5,
+            "type": "stat",
+            "title": "Cost",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 12,
+              "y": 1,
+              "w": 4,
+              "h": 4
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} | sum_over_time(span.meridian.cost_usd) by (trace:id)",
+                "metricsQueryType": "instant"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "currencyUSD",
+                "decimals": 4,
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              "overrides": []
+            },
+            "transformations": [
+              {
+                "id": "labelsToFields",
+                "options": {
+                  "mode": "columns"
+                }
+              },
+              {
+                "id": "merge",
+                "options": {}
+              }
+            ],
+            "options": {
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "/^value$$/",
+                "values": false
+              },
+              "colorMode": "none",
+              "graphMode": "none",
+              "textMode": "value"
+            },
+            "description": "Priced by PydanticAI through genai-prices. Runs on unpriced models, such as the offline test model, add nothing."
+          },
+          {
+            "id": 6,
+            "type": "stat",
+            "title": "Cost per run",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 16,
+              "y": 1,
+              "w": 4,
+              "h": 4
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} | sum_over_time(span.meridian.cost_usd) by (trace:id)",
+                "metricsQueryType": "instant"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "currencyUSD",
+                "decimals": 4,
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              "overrides": []
+            },
+            "transformations": [
+              {
+                "id": "labelsToFields",
+                "options": {
+                  "mode": "columns"
+                }
+              },
+              {
+                "id": "merge",
+                "options": {}
+              }
+            ],
+            "options": {
+              "reduceOptions": {
+                "calcs": [
+                  "mean"
+                ],
+                "fields": "/^value$$/",
+                "values": false
+              },
+              "colorMode": "none",
+              "graphMode": "none",
+              "textMode": "value"
+            },
+            "description": "Mean over priced runs."
+          },
+          {
+            "id": 7,
+            "type": "stat",
+            "title": "Model calls",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 20,
+              "y": 1,
+              "w": 4,
+              "h": 4
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} | sum_over_time(span.meridian.model_calls) by (trace:id)",
+                "metricsQueryType": "instant"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "none",
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              "overrides": []
+            },
+            "transformations": [
+              {
+                "id": "labelsToFields",
+                "options": {
+                  "mode": "columns"
+                }
+              },
+              {
+                "id": "merge",
+                "options": {}
+              }
+            ],
+            "options": {
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "/^value$$/",
+                "values": false
+              },
+              "colorMode": "none",
+              "graphMode": "none",
+              "textMode": "value"
+            }
+          },
+          {
+            "id": 8,
+            "type": "row",
+            "title": "Over time",
+            "collapsed": false,
+            "gridPos": {
+              "x": 0,
+              "y": 5,
+              "w": 24,
+              "h": 1
+            },
+            "panels": []
+          },
+          {
+            "id": 9,
+            "type": "timeseries",
+            "title": "Runs by harness",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 0,
+              "y": 6,
+              "w": 8,
+              "h": 8
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} | count_over_time() by (span.meridian.harness)",
+                "metricsQueryType": "range"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "none",
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 60,
+                  "lineWidth": 1,
+                  "stacking": {
+                    "mode": "normal"
+                  },
+                  "spanNulls": true
+                }
+              },
+              "overrides": []
+            },
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom",
+                "showLegend": true
+              },
+              "tooltip": {
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          {
+            "id": 10,
+            "type": "timeseries",
+            "title": "Verdicts",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 8,
+              "y": 6,
+              "w": 8,
+              "h": 8
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} | count_over_time() by (span.meridian.outcome)",
+                "metricsQueryType": "range"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "none",
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 60,
+                  "lineWidth": 1,
+                  "stacking": {
+                    "mode": "normal"
+                  },
+                  "spanNulls": true
+                }
+              },
+              "overrides": []
+            },
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom",
+                "showLegend": true
+              },
+              "tooltip": {
+                "mode": "multi",
+                "sort": "desc"
+              }
+            },
+            "description": "The workbench's outcome: passed, failed, errored or not_evaluated (no check)."
+          },
+          {
+            "id": 11,
+            "type": "timeseries",
+            "title": "Runs by model",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 16,
+              "y": 6,
+              "w": 8,
+              "h": 8
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} | count_over_time() by (span.meridian.model)",
+                "metricsQueryType": "range"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "none",
+                "custom": {
+                  "drawStyle": "bars",
+                  "fillOpacity": 60,
+                  "lineWidth": 1,
+                  "stacking": {
+                    "mode": "normal"
+                  },
+                  "spanNulls": true
+                }
+              },
+              "overrides": []
+            },
+            "options": {
+              "legend": {
+                "displayMode": "list",
+                "placement": "bottom",
+                "showLegend": true
+              },
+              "tooltip": {
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          {
+            "id": 12,
+            "type": "row",
+            "title": "Where cost and time go",
+            "collapsed": false,
+            "gridPos": {
+              "x": 0,
+              "y": 14,
+              "w": 24,
+              "h": 1
+            },
+            "panels": []
+          },
+          {
+            "id": 13,
+            "type": "bargauge",
+            "title": "Cost by harness",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 0,
+              "y": 15,
+              "w": 8,
+              "h": 8
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} | sum_over_time(span.meridian.cost_usd) by (span.meridian.harness, trace:id)",
+                "metricsQueryType": "instant"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "currencyUSD",
+                "decimals": 4,
+                "mappings": [
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": "^\"(.*)\"$$",
+                      "result": {
+                        "text": "$$1"
+                      }
+                    }
+                  }
+                ],
+                "color": {
+                  "mode": "palette-classic"
+                }
+              },
+              "overrides": []
+            },
+            "transformations": [
+              {
+                "id": "labelsToFields",
+                "options": {
+                  "mode": "columns"
+                }
+              },
+              {
+                "id": "merge",
+                "options": {}
+              },
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {
+                    "Time": true,
+                    "trace:id": true
+                  }
+                }
+              },
+              {
+                "id": "groupBy",
+                "options": {
+                  "fields": {
+                    "span.meridian.harness": {
+                      "operation": "groupby",
+                      "aggregations": []
+                    },
+                    "value": {
+                      "operation": "aggregate",
+                      "aggregations": [
+                        "sum"
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "options": {
+              "orientation": "horizontal",
+              "displayMode": "basic",
+              "showUnfilled": true,
+              "valueMode": "text",
+              "namePlacement": "left",
+              "reduceOptions": {
+                "calcs": [],
+                "fields": "",
+                "values": true
+              }
+            }
+          },
+          {
+            "id": 14,
+            "type": "bargauge",
+            "title": "Cost by case",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 8,
+              "y": 15,
+              "w": 8,
+              "h": 8
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} | sum_over_time(span.meridian.cost_usd) by (span.meridian.case_id, trace:id)",
+                "metricsQueryType": "instant"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "currencyUSD",
+                "decimals": 4,
+                "mappings": [
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": "^\"(.*)\"$$",
+                      "result": {
+                        "text": "$$1"
+                      }
+                    }
+                  }
+                ],
+                "color": {
+                  "mode": "palette-classic"
+                }
+              },
+              "overrides": []
+            },
+            "transformations": [
+              {
+                "id": "labelsToFields",
+                "options": {
+                  "mode": "columns"
+                }
+              },
+              {
+                "id": "merge",
+                "options": {}
+              },
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {
+                    "Time": true,
+                    "trace:id": true
+                  }
+                }
+              },
+              {
+                "id": "groupBy",
+                "options": {
+                  "fields": {
+                    "span.meridian.case_id": {
+                      "operation": "groupby",
+                      "aggregations": []
+                    },
+                    "value": {
+                      "operation": "aggregate",
+                      "aggregations": [
+                        "sum"
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "options": {
+              "orientation": "horizontal",
+              "displayMode": "basic",
+              "showUnfilled": true,
+              "valueMode": "text",
+              "namePlacement": "left",
+              "reduceOptions": {
+                "calcs": [],
+                "fields": "",
+                "values": true
+              }
+            }
+          },
+          {
+            "id": 15,
+            "type": "bargauge",
+            "title": "Run duration p50 / p95 by harness",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 16,
+              "y": 15,
+              "w": 8,
+              "h": 8
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} | quantile_over_time(duration, .5, .95) by (span.meridian.harness)",
+                "metricsQueryType": "instant"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "s",
+                "color": {
+                  "mode": "palette-classic"
+                }
+              },
+              "overrides": []
+            },
+            "transformations": [
+              {
+                "id": "renameByRegex",
+                "options": {
+                  "regex": ".*p=([0-9.]+).*span.meridian.harness=\"([^\"]+)\".*",
+                  "renamePattern": "$$2 p$$1"
+                }
+              }
+            ],
+            "options": {
+              "orientation": "horizontal",
+              "displayMode": "basic",
+              "showUnfilled": true,
+              "valueMode": "text",
+              "namePlacement": "left",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "fields": "",
+                "values": false
+              }
+            }
+          },
+          {
+            "id": 16,
+            "type": "row",
+            "title": "Agents and tools",
+            "collapsed": false,
+            "gridPos": {
+              "x": 0,
+              "y": 23,
+              "w": 24,
+              "h": 1
+            },
+            "panels": []
+          },
+          {
+            "id": 17,
+            "type": "bargauge",
+            "title": "Cost by agent",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 0,
+              "y": 24,
+              "w": 6,
+              "h": 8
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} >> {span:name=\"meridian.agent_usage\"} | sum_over_time(span.meridian.cost_usd) by (span.meridian.agent, trace:id)",
+                "metricsQueryType": "instant"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "currencyUSD",
+                "decimals": 4,
+                "mappings": [
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": "^\"(.*)\"$$",
+                      "result": {
+                        "text": "$$1"
+                      }
+                    }
+                  }
+                ],
+                "color": {
+                  "mode": "palette-classic"
+                }
+              },
+              "overrides": []
+            },
+            "transformations": [
+              {
+                "id": "labelsToFields",
+                "options": {
+                  "mode": "columns"
+                }
+              },
+              {
+                "id": "merge",
+                "options": {}
+              },
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {
+                    "Time": true,
+                    "trace:id": true
+                  }
+                }
+              },
+              {
+                "id": "groupBy",
+                "options": {
+                  "fields": {
+                    "span.meridian.agent": {
+                      "operation": "groupby",
+                      "aggregations": []
+                    },
+                    "value": {
+                      "operation": "aggregate",
+                      "aggregations": [
+                        "sum"
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "options": {
+              "orientation": "horizontal",
+              "displayMode": "basic",
+              "showUnfilled": true,
+              "valueMode": "text",
+              "namePlacement": "left",
+              "reduceOptions": {
+                "calcs": [],
+                "fields": "",
+                "values": true
+              }
+            },
+            "description": "Agents are named by the harness; unnamed ones show as agent."
+          },
+          {
+            "id": 18,
+            "type": "bargauge",
+            "title": "Input tokens by agent",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 6,
+              "y": 24,
+              "w": 6,
+              "h": 8
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} >> {span:name=\"meridian.agent_usage\"} | sum_over_time(span.meridian.input_tokens) by (span.meridian.agent, trace:id)",
+                "metricsQueryType": "instant"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "none",
+                "mappings": [
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": "^\"(.*)\"$$",
+                      "result": {
+                        "text": "$$1"
+                      }
+                    }
+                  }
+                ],
+                "color": {
+                  "mode": "palette-classic"
+                }
+              },
+              "overrides": []
+            },
+            "transformations": [
+              {
+                "id": "labelsToFields",
+                "options": {
+                  "mode": "columns"
+                }
+              },
+              {
+                "id": "merge",
+                "options": {}
+              },
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {
+                    "Time": true,
+                    "trace:id": true
+                  }
+                }
+              },
+              {
+                "id": "groupBy",
+                "options": {
+                  "fields": {
+                    "span.meridian.agent": {
+                      "operation": "groupby",
+                      "aggregations": []
+                    },
+                    "value": {
+                      "operation": "aggregate",
+                      "aggregations": [
+                        "sum"
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "options": {
+              "orientation": "horizontal",
+              "displayMode": "basic",
+              "showUnfilled": true,
+              "valueMode": "text",
+              "namePlacement": "left",
+              "reduceOptions": {
+                "calcs": [],
+                "fields": "",
+                "values": true
+              }
+            }
+          },
+          {
+            "id": 19,
+            "type": "bargauge",
+            "title": "Tool calls by tool",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 12,
+              "y": 24,
+              "w": 6,
+              "h": 8
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} >> {span.gen_ai.operation.name=\"execute_tool\"} | count_over_time() by (span.gen_ai.tool.name)",
+                "metricsQueryType": "range"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "none",
+                "color": {
+                  "mode": "palette-classic"
+                }
+              },
+              "overrides": []
+            },
+            "transformations": [],
+            "options": {
+              "orientation": "horizontal",
+              "displayMode": "basic",
+              "showUnfilled": true,
+              "valueMode": "text",
+              "namePlacement": "left",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": false
+              }
+            }
+          },
+          {
+            "id": 20,
+            "type": "bargauge",
+            "title": "Tool errors by tool",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 18,
+              "y": 24,
+              "w": 6,
+              "h": 8
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} >> {span.gen_ai.operation.name=\"execute_tool\" && status=error} | count_over_time() by (span.gen_ai.tool.name)",
+                "metricsQueryType": "range"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "none",
+                "color": {
+                  "mode": "palette-classic"
+                }
+              },
+              "overrides": []
+            },
+            "transformations": [],
+            "options": {
+              "orientation": "horizontal",
+              "displayMode": "basic",
+              "showUnfilled": true,
+              "valueMode": "text",
+              "namePlacement": "left",
+              "reduceOptions": {
+                "calcs": [
+                  "sum"
+                ],
+                "fields": "",
+                "values": false
+              }
+            },
+            "description": "Tool calls that raised, including refused actions."
+          },
+          {
+            "id": 21,
+            "type": "row",
+            "title": "Runs",
+            "collapsed": false,
+            "gridPos": {
+              "x": 0,
+              "y": 32,
+              "w": 24,
+              "h": 1
+            },
+            "panels": []
+          },
+          {
+            "id": 22,
+            "type": "table",
+            "title": "Recent runs",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 0,
+              "y": 33,
+              "w": 24,
+              "h": 10
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\"} | select(span.meridian.case_id, span.meridian.harness, span.meridian.model, span.meridian.outcome, span.meridian.error, span.meridian.cost_usd, span.meridian.run_id)",
+                "limit": 100,
+                "spss": 1,
+                "tableType": "spans"
+              }
+            ],
+            "transformations": [
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {
+                    "traceService": true,
+                    "traceName": true,
+                    "name": true
+                  },
+                  "renameByName": {
+                    "time": "Started",
+                    "meridian.case_id": "Case",
+                    "meridian.harness": "Harness",
+                    "meridian.model": "Model",
+                    "meridian.outcome": "Outcome",
+                    "meridian.cost_usd": "Cost",
+                    "duration": "Duration",
+                    "meridian.error": "Error",
+                    "meridian.run_id": "Run",
+                    "spanID": "Span"
+                  },
+                  "indexByName": {
+                    "time": 0,
+                    "meridian.case_id": 1,
+                    "meridian.harness": 2,
+                    "meridian.model": 3,
+                    "meridian.outcome": 4,
+                    "meridian.cost_usd": 5,
+                    "duration": 6,
+                    "meridian.error": 7,
+                    "meridian.run_id": 8,
+                    "spanID": 9
+                  }
+                }
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "Cost"
+                  },
+                  "properties": [
+                    {
+                      "id": "unit",
+                      "value": "currencyUSD"
+                    },
+                    {
+                      "id": "decimals",
+                      "value": 4
+                    }
+                  ]
+                }
+              ]
+            },
+            "description": "Open a trace ID to see the run's agents, model calls and tool calls."
+          },
+          {
+            "id": 23,
+            "type": "table",
+            "title": "Failed runs",
+            "datasource": {
+              "type": "tempo",
+              "uid": "tempo"
+            },
+            "gridPos": {
+              "x": 0,
+              "y": 43,
+              "w": 24,
+              "h": 10
+            },
+            "targets": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "type": "tempo",
+                  "uid": "tempo"
+                },
+                "queryType": "traceql",
+                "query": "{span:name=\"workbench.run\" && span.meridian.harness=~\"$${harness:pipe}\" && span.meridian.case_id=~\"$${case_id:pipe}\" && span.meridian.model=~\"$${model:pipe}\" && (span.meridian.outcome!=\"passed\" || status=error)} | select(span.meridian.case_id, span.meridian.harness, span.meridian.model, span.meridian.outcome, span.meridian.error, span.meridian.cost_usd, span.meridian.run_id)",
+                "limit": 100,
+                "spss": 1,
+                "tableType": "spans"
+              }
+            ],
+            "transformations": [
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {
+                    "traceService": true,
+                    "traceName": true,
+                    "name": true
+                  },
+                  "renameByName": {
+                    "time": "Started",
+                    "meridian.case_id": "Case",
+                    "meridian.harness": "Harness",
+                    "meridian.model": "Model",
+                    "meridian.outcome": "Outcome",
+                    "meridian.cost_usd": "Cost",
+                    "duration": "Duration",
+                    "meridian.error": "Error",
+                    "meridian.run_id": "Run",
+                    "spanID": "Span"
+                  },
+                  "indexByName": {
+                    "time": 0,
+                    "meridian.case_id": 1,
+                    "meridian.harness": 2,
+                    "meridian.model": 3,
+                    "meridian.outcome": 4,
+                    "meridian.cost_usd": 5,
+                    "duration": 6,
+                    "meridian.error": 7,
+                    "meridian.run_id": 8,
+                    "spanID": 9
+                  }
+                }
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "Cost"
+                  },
+                  "properties": [
+                    {
+                      "id": "unit",
+                      "value": "currencyUSD"
+                    },
+                    {
+                      "id": "decimals",
+                      "value": 4
+                    }
+                  ]
+                }
+              ]
+            },
+            "description": "Every run whose outcome is not passed."
+          }
+        ]
+      }
+  # yamllint enable rule:line-length

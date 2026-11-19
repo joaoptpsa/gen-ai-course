@@ -69,12 +69,24 @@ which shows them, both on 127.0.0.1:
 docker compose --file telemetry/docker-compose.yml up --detach
 ```
 
-Grafana is at <http://127.0.0.1:3000> (Explore, data source Tempo), with no
-login. Tempo takes OTLP on port 14318, since a workstation collector may already
-hold 4318; to send runs there, set
+Grafana is at <http://127.0.0.1:3000>, with no login. The "Meridian workbench"
+dashboard shows runs, verdicts, cost in dollars, duration, and cost, tokens and
+tool calls per agent, filtered by harness, case and model; Explore opens single
+traces. Tempo takes OTLP on port 14318, since a workstation collector may
+already hold 4318; to send runs there, set
 `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:14318`. Traces are kept 14 days,
 Tempo's default. Adding `down --volumes` to the same command stops the stack
 and deletes its traces.
+
+- Cost comes from PydanticAI, which prices each model call through
+  `genai-prices` (`operation.cost`). The runner adds each run's totals to its
+  root span and writes one `meridian.agent_usage` span per agent; the offline
+  test model has no price, so its runs cost nothing.
+- The dashboard is inline in the compose file. Change it in
+  `telemetry/build_dashboard.py` and run that script; it rewrites the inline
+  JSON.
+- Compose does not notice edits to inline configs: after changing one, run
+  `up --detach --force-recreate` with the service name.
 
 ## Layout
 
