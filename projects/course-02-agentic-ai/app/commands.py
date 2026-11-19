@@ -35,7 +35,7 @@ from app.paths import (
     RESULTS_DIR,
     SESSIONS_DIR,
 )
-from meridian.agent_runtime import default_model
+from meridian.agent_runtime import default_model, require_api_key
 
 Progress = Callable[[int, int, dict[str, Any]], None]
 
@@ -414,7 +414,11 @@ def _approve_live(
     names: dict[str, str], runs: int, cap_usd: Any, approved: bool
 ) -> None:
     live = {role: name for role, name in names.items() if name != OFFLINE_MODEL}
-    if not live or approved:
+    if not live:
+        return
+    if approved:
+        # An explicit --model skips default_model(), the other place that loads .env.
+        require_api_key()
         return
     models = ", ".join(f"{role}={name}" for role, name in live.items())
     raise ValueError(
