@@ -1,8 +1,12 @@
-"""The two outputs the improvement agents must return. Shared by the lab and starter/improver.py."""
+"""The outputs the improvement agents must return. Shared by the lab and starter/improver.py."""
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
+
+from app.core.team_trace import Blame
+
+__all__ = ["Blame", "Proposal", "Review"]
 
 
 class Review(BaseModel):
