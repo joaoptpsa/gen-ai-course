@@ -49,7 +49,11 @@ if use_solutions():
 
 
 def checklist(checks: list[tuple[bool, str]]) -> None:
-    st.markdown("  \n".join(f":green[✓ {text}]" if ok else f":red[**✗ {text}**]" for ok, text in checks))
+    st.markdown(
+        "  \n".join(
+            f":green[✓ {text}]" if ok else f":red[**✗ {text}**]" for ok, text in checks
+        )
+    )
 
 
 def replay_view() -> None:
@@ -59,7 +63,9 @@ def replay_view() -> None:
         return
     totals = replay.totals()
     a, b, c, d = st.columns(4)
-    a.metric("Right answers", f"{totals['right']} / {len(REQUESTS)}" if replay.rows else "–")
+    a.metric(
+        "Right answers", f"{totals['right']} / {len(REQUESTS)}" if replay.rows else "–"
+    )
     b.metric("Cost", f"${totals['cost']:.4f}")
     c.metric("Served from cache", totals["cache"])
     d.metric("Leaks", totals["leaks"])
@@ -69,24 +75,46 @@ def replay_view() -> None:
         checklist(replay.verdict())
     if replay.rows:
         rows = [{k: v for k, v in row.items() if k != "ok"} for row in replay.rows]
-        st.dataframe(rows, hide_index=True, width="stretch", column_config={"Result": st.column_config.TextColumn(width="large")})
+        st.dataframe(
+            rows,
+            hide_index=True,
+            width="stretch",
+            column_config={"Result": st.column_config.TextColumn(width="large")},
+        )
     if not replay.running and not st.session_state.get("logged_replay"):
         st.session_state["logged_replay"] = True
         if not replay.error:
             checks = replay.verdict()
-            st.session_state.setdefault("runs", []).append({
-                "Right": totals["right"], "Leaks": totals["leaks"], "Large first": totals["large"], "From cache": totals["cache"],
-                "Cost $": totals["cost"], "Seconds": replay.seconds,
-                "Result": "all green" if all(ok for ok, _ in checks) else "; ".join(t for ok, t in checks if not ok)})
+            st.session_state.setdefault("runs", []).append(
+                {
+                    "Right": totals["right"],
+                    "Leaks": totals["leaks"],
+                    "Large first": totals["large"],
+                    "From cache": totals["cache"],
+                    "Cost $": totals["cost"],
+                    "Seconds": replay.seconds,
+                    "Result": "all green"
+                    if all(ok for ok, _ in checks)
+                    else "; ".join(t for ok, t in checks if not ok),
+                }
+            )
         st.rerun()
 
 
-st.caption(f"Ribeira Home's support assistant on Black Friday: 15 requests. Provider A: small {SMALL}, large {LARGE}, "
-           f"{RATE_LIMIT} calls a minute; its large model is down {OUTAGE[0]}–{OUTAGE[1]}. Provider B: backup, a strong model. "
-           f"A request deferred more than {MAX_DEFERS} times gets a 'we are busy' reply. Your gateway: `starter/gateway.py`.")
+st.caption(
+    f"Ribeira Home's support assistant on Black Friday: 15 requests. Provider A: small {SMALL}, large {LARGE}, "
+    f"{RATE_LIMIT} calls a minute; its large model is down {OUTAGE[0]}–{OUTAGE[1]}. Provider B: backup, a strong model. "
+    f"A request deferred more than {MAX_DEFERS} times gets a 'we are busy' reply. Your gateway: `starter/gateway.py`."
+)
 _, go = st.columns([5, 1], vertical_alignment="bottom")
 replay = st.session_state.get("replay")
-if go.button("Run", type="primary", key="run_replay", width="stretch", disabled=bool(replay and replay.running)):
+if go.button(
+    "Run",
+    type="primary",
+    key="run_replay",
+    width="stretch",
+    disabled=bool(replay and replay.running),
+):
     try:
         st.session_state["replay"] = Replay(ui.get_model())
         st.session_state["logged_replay"] = False
@@ -94,10 +122,18 @@ if go.button("Run", type="primary", key="run_replay", width="stretch", disabled=
     except ValueError as error:
         st.error(str(error))
 with st.expander("The 15 requests"):
-    st.dataframe([{k: r[k] for k in ("id", "time", "kind", "customer", "question", "context")} for r in REQUESTS],
-                 hide_index=True, width="stretch")
+    st.dataframe(
+        [
+            {k: r[k] for k in ("id", "time", "kind", "customer", "question", "context")}
+            for r in REQUESTS
+        ],
+        hide_index=True,
+        width="stretch",
+    )
 replay = st.session_state.get("replay")
-st.fragment(run_every=0.8 if replay is not None and replay.running else None)(replay_view)()
+st.fragment(run_every=0.8 if replay is not None and replay.running else None)(
+    replay_view
+)()
 
 if st.session_state.get("runs"):
     st.markdown("**Every run**")

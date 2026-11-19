@@ -10,7 +10,12 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 def scripted(size: str = "large") -> FunctionModel:
     def play(messages, info: AgentInfo) -> ModelResponse:
-        prompt = " ".join(str(p.content) for m in messages for p in m.parts if isinstance(p, UserPromptPart))
+        prompt = " ".join(
+            str(p.content)
+            for m in messages
+            for p in m.parts
+            if isinstance(p, UserPromptPart)
+        )
         output = info.output_tools[0]
         facts = prompt.split("Facts:", 1)[-1].strip()
         order = re.search(r"#\d+", facts)
@@ -22,10 +27,28 @@ def scripted(size: str = "large") -> FunctionModel:
                 action = "refund" if price < 80 else "replace"
             else:  # the small model misses the €80 limit
                 action = "refund"
-            return ModelResponse(parts=[ToolCallPart(output.name, {"action": action, "reason": f"Order {order.group(0)}: policy."})])
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        output.name,
+                        {
+                            "action": action,
+                            "reason": f"Order {order.group(0)}: policy.",
+                        },
+                    )
+                ]
+            )
         if facts == "none":
-            return ModelResponse(parts=[ToolCallPart(output.name, {"text": "Hello! How can I help you today?"})])
-        return ModelResponse(parts=[ToolCallPart(output.name, {"text": facts.split(". ")[0] + "."})])
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        output.name, {"text": "Hello! How can I help you today?"}
+                    )
+                ]
+            )
+        return ModelResponse(
+            parts=[ToolCallPart(output.name, {"text": facts.split(". ")[0] + "."})]
+        )
 
     return FunctionModel(play)
 

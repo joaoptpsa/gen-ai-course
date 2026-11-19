@@ -34,20 +34,35 @@ async def resume(room, checkpoint: dict) -> None:
     tasks = []
     for step in checkpoint["plan"]:
         if step["key"] in done:
-            room.note(f"Step {step['step']} ({step['action']}) already ran: it is in the systems' history. Skip it.")
+            room.note(
+                f"Step {step['step']} ({step['action']}) already ran: it is in the systems' history. Skip it."
+            )
             continue
         # Time passed during the crash: an approval from before may not hold any more
         ref = step["approval_ref"]
         if ref and not room.approval_status(ref)["valid"]:
-            room.note(f"Step {step['step']}: approval {ref} is no longer valid. Ask the on-call again.")
+            room.note(
+                f"Step {step['step']}: approval {ref} is no longer valid. Ask the on-call again."
+            )
             ref = None
-        tasks.append(f"- {step['action']} {step['target']}, idempotency_key={step['key']}"
-                     + (f", approval_ref={ref}" if ref else ", no approval yet: ask the on-call"))
+        tasks.append(
+            f"- {step['action']} {step['target']}, idempotency_key={step['key']}"
+            + (f", approval_ref={ref}" if ref else ", no approval yet: ask the on-call")
+        )
     if tasks:
-        findings = "\n".join(f"- {name}: {text}" for name, text in checkpoint["findings"].items())
-        await room.ask("remediation", f"{checkpoint['brief']}\n\nFindings:\n{findings}\n\n"
-                                      "Other steps are already done. Do only these, with exactly these keys:\n" + "\n".join(tasks))
+        findings = "\n".join(
+            f"- {name}: {text}" for name, text in checkpoint["findings"].items()
+        )
+        await room.ask(
+            "remediation",
+            f"{checkpoint['brief']}\n\nFindings:\n{findings}\n\n"
+            "Other steps are already done. Do only these, with exactly these keys:\n"
+            + "\n".join(tasks),
+        )
     else:
         room.note("Nothing left to do: every step is in the systems' history.")
     # Confirm with someone who did not do the work
-    await room.ask("reviewer", "The incident team resumed after a crash. Is the incident over, and did any action run twice?")
+    await room.ask(
+        "reviewer",
+        "The incident team resumed after a crash. Is the incident over, and did any action run twice?",
+    )

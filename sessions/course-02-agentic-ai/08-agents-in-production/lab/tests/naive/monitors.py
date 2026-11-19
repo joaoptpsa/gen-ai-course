@@ -4,7 +4,11 @@ from __future__ import annotations
 
 
 def error_spans(trace) -> list[str]:
-    return [f"{span['name']} failed: {span['error']}" for span in trace.spans if span["status"] == "ERROR"]
+    return [
+        f"{span['name']} failed: {span['error']}"
+        for span in trace.spans
+        if span["status"] == "ERROR"
+    ]
 
 
 MONITORS = [error_spans]
